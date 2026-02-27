@@ -132,6 +132,8 @@ scripts/release_debian_trixie.sh
 - `postgresql-17-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
 
+GitHub Release CI 会同时发布 `amd64` 和 `arm64` 两种架构的包产物（`.deb` + `.rpm`）。
+
 ## 许可证
 
 MIT，见 `LICENSE`。

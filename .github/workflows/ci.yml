@@ -10,7 +10,15 @@ on:
 
 jobs:
   rust-tests:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -18,7 +26,15 @@ jobs:
         run: cargo test --lib
 
   benchmark-pg18:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +44,7 @@ jobs:
 
       - name: Start benchmark container
         run: |
-          docker run -d --name pg-eviltransform-benchmark \
+          docker run -d --name pg-eviltransform-benchmark-${{ matrix.arch }} \
             -e POSTGRES_HOST_AUTH_METHOD=trust \
             -e POSTGRES_DB=postgres \
             -v "$GITHUB_WORKSPACE:/work" \
@@ -36,7 +52,7 @@ jobs:
 
       - name: Build extension and run benchmark
         run: |
-          docker exec -u root pg-eviltransform-benchmark bash -lc '
+          docker exec -u root pg-eviltransform-benchmark-${{ matrix.arch }} bash -lc '
             set -euo pipefail
             until pg_isready -h 127.0.0.1 -p 5432 -U postgres >/dev/null 2>&1; do
               sleep 1
@@ -65,7 +81,7 @@ jobs:
       - name: Upload benchmark report
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-pg18-report
+          name: benchmark-pg18-report-${{ matrix.arch }}
           path: benchmark_pg18_report.txt
 
       - name: Show benchmark report tail
@@ -74,8 +90,8 @@ jobs:
 
       - name: Container logs
         if: always()
-        run: docker logs pg-eviltransform-benchmark || true
+        run: docker logs pg-eviltransform-benchmark-${{ matrix.arch }} || true
 
       - name: Cleanup container
         if: always()
-        run: docker rm -f pg-eviltransform-benchmark || true
+        run: docker rm -f pg-eviltransform-benchmark-${{ matrix.arch }} || true

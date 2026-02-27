@@ -132,6 +132,8 @@ This builds `.deb` artifacts under `dist/`:
 - `postgresql-17-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
 
+GitHub Release CI publishes both `amd64` and `arm64` package artifacts (`.deb` + `.rpm`).
+
 ## License
 
 MIT. See `LICENSE`.
