@@ -58,6 +58,12 @@ If you use the regex-based SQL approach, cite:
 - PostgreSQL + PostGIS (PG 14-18 supported)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
 
+Packaging note:
+
+- DEB packages hard-depend only on PostgreSQL server packages.
+- PostGIS is kept as a suggested package to avoid pulling a large dependency tree during `apt install`.
+- Runtime still requires PostGIS (`CREATE EXTENSION postgis`) before `CREATE EXTENSION pg_eviltransform`.
+
 ## Build
 
 ```bash
