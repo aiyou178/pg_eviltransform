@@ -1,12 +1,10 @@
 # Minimal image for pg_eviltransform benchmark on PostgreSQL 18 (Debian trixie)
-ARG BASE_IMAGE=docker.m.daocloud.io/postgres:18.3-trixie
+ARG BASE_IMAGE=postgres:18.3-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV PATH=/root/.cargo/bin:$PATH
-ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
-ENV RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
 
 RUN set -eux; \
   apt-get update; \
@@ -26,13 +24,6 @@ RUN set -eux; \
   rm -rf /var/lib/apt/lists/* /tmp/*
 
 RUN set -eux; \
-  mkdir -p /root/.cargo; \
-  printf '%s\n' \
-    '[source.crates-io]' \
-    'replace-with = "tuna"' \
-    '[source.tuna]' \
-    'registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' \
-    > /root/.cargo/config.toml; \
   curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal; \
   rustup default stable; \
   cargo install --locked cargo-pgrx --version 0.17.0

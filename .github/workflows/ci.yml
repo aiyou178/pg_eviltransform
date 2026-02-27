@@ -36,7 +36,7 @@ jobs:
 
       - name: Build extension and run benchmark
         run: |
-          docker exec pg-eviltransform-benchmark bash -lc '
+          docker exec -u root pg-eviltransform-benchmark bash -lc '
             set -euo pipefail
             until pg_isready -h 127.0.0.1 -p 5432 -U postgres >/dev/null 2>&1; do
               sleep 1
