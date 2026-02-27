@@ -81,6 +81,6 @@ FROM (
 ) t;
 SQL
 
-psql -v ON_ERROR_STOP=1 -f /tmp/benchmark_pg18.sql | tee "$REPORT_PATH"
+psql -v ON_ERROR_STOP=1 -f /tmp/benchmark_pg18.sql 2>&1 | tee "$REPORT_PATH"
 
 echo "Benchmark report written to $REPORT_PATH"
