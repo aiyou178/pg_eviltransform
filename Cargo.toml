@@ -8,6 +8,10 @@ version = "0.0.2"
 [lib]
 crate-type = ["cdylib", "lib"]
 
+[[bin]]
+name = "pgrx_embed_pg_eviltransform"
+path = "src/bin/pgrx_embed_pg_eviltransform.rs"
+
 [features]
 default = []
 extension = ["dep:pgrx"]
