@@ -42,8 +42,12 @@ jobs:
               sleep 1
             done
             cd /work
-            cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
-            cargo pgrx install --release --features pg18 --no-default-features --pg-config /usr/lib/postgresql/18/bin/pg_config
+            PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config
+            if [ ! -x "$PG_CONFIG" ]; then
+              PG_CONFIG="$(command -v pg_config)"
+            fi
+            cargo pgrx init --pg18="$PG_CONFIG"
+            cargo pgrx install --release --features pg18 --no-default-features --pg-config "$PG_CONFIG"
             ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt
           '
 

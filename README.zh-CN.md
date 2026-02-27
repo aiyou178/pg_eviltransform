@@ -113,19 +113,10 @@ ROWS=500000 PGDATABASE=testdb scripts/benchmark_pg18.sh /tmp/bench_pg18.txt
 
 最新结果（PG18，`ROWS=200000`，报告文件：`benchmark_pg18_report.txt`）：
 
-| 场景 | `ST_EvilTransform` | `Regex_EvilTransform` |
-|---|---:|---:|
-| `4326 -> 990001` | `92.402 ms` | `2832.821 ms` |
-| `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` |
-
-```mermaid
-xychart-beta
-  title "PG18 Benchmark (ms, lower is better)"
-  x-axis ["4326->990001","990002->3857"]
-  y-axis "Execution Time (ms)" 0 --> 8500
-  bar "ST_EvilTransform" [92.402,183.856]
-  bar "Regex_EvilTransform" [2832.821,8393.272]
-```
+| 场景 | `ST_EvilTransform` | `Regex_EvilTransform` | 速度比（`Regex` / `ST`） |
+|---|---:|---:|---:|
+| `4326 -> 990001` | `92.402 ms` | `2832.821 ms` | `30.7x` |
+| `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` | `45.7x` |
 
 ## Debian Trixie 发版（PG14-18）
 

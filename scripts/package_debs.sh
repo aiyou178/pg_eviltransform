@@ -10,15 +10,20 @@ mkdir -p "$OUT_DIR"
 
 cd "$ROOT_DIR"
 
-cargo pgrx init \
-  --pg14=/usr/lib/postgresql/14/bin/pg_config \
-  --pg15=/usr/lib/postgresql/15/bin/pg_config \
-  --pg16=/usr/lib/postgresql/16/bin/pg_config \
-  --pg17=/usr/lib/postgresql/17/bin/pg_config \
-  --pg18=/usr/lib/postgresql/18/bin/pg_config
+# Initialize pgrx once using PG18. Per-version packaging passes explicit --pg-config.
+if [[ ! -x /usr/lib/postgresql/18/bin/pg_config ]]; then
+  echo "missing /usr/lib/postgresql/18/bin/pg_config" >&2
+  exit 2
+fi
+cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
 
 for pg in "${PG_VERSIONS[@]}"; do
   echo "[package] PostgreSQL $pg"
+  pg_config="/usr/lib/postgresql/$pg/bin/pg_config"
+  if [[ ! -x "$pg_config" ]]; then
+    echo "missing pg_config for PostgreSQL $pg at $pg_config" >&2
+    exit 2
+  fi
 
   build_dir="$ROOT_DIR/target/pgrx-pkg/pg$pg"
   rm -rf "$build_dir"
@@ -28,7 +33,7 @@ for pg in "${PG_VERSIONS[@]}"; do
     --release \
     --features "pg$pg" \
     --no-default-features \
-    --pg-config "/usr/lib/postgresql/$pg/bin/pg_config" \
+    --pg-config "$pg_config" \
     --out-dir "$build_dir"
 
   package_root="$(find "$build_dir" -maxdepth 1 -type d -name 'pg_eviltransform-pg*' | head -n 1)"
