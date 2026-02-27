@@ -47,7 +47,12 @@ jobs:
               PG_CONFIG="$(command -v pg_config)"
             fi
             cargo pgrx init --pg18="$PG_CONFIG"
-            cargo pgrx install -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG"
+            if ! cargo pgrx install -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG" 2>&1 | tee /tmp/pgrx_install.log; then
+              tail -n 200 /tmp/pgrx_install.log >&2 || true
+              err_msg="$(tail -n 30 /tmp/pgrx_install.log | sed ":a;N;\$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g")"
+              echo "::error title=cargo pgrx install failed::${err_msg}"
+              exit 1
+            fi
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
             ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt
           '
