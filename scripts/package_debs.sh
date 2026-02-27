@@ -29,45 +29,42 @@ cargo pgrx init \
 for pg in "${PG_VERSIONS[@]}"; do
   echo "[package] PostgreSQL $pg"
   pg_config="/usr/lib/postgresql/$pg/bin/pg_config"
-
-  build_dir="$ROOT_DIR/target/pgrx-pkg/pg$pg"
-  rm -rf "$build_dir"
-  mkdir -p "$build_dir"
-
-  cargo pgrx package \
+  cargo pgrx install \
     -v \
     --release \
     --features "pg$pg" \
     --no-default-features \
-    --pg-config "$pg_config" \
-    --out-dir "$build_dir"
+    --pg-config "$pg_config"
 
-  control_file="$(find "$build_dir" -type f -path '*/extension/pg_eviltransform.control' | head -n 1)"
-  if [[ -z "$control_file" ]]; then
-    echo "failed to find packaged control file under $build_dir for PostgreSQL $pg" >&2
-    find "$build_dir" -maxdepth 4 -mindepth 1 -print >&2 || true
+  ext_dir="/usr/share/postgresql/$pg/extension"
+  lib_dir="/usr/lib/postgresql/$pg/lib"
+  if [[ ! -d "$ext_dir" || ! -d "$lib_dir" ]]; then
+    echo "missing extension/lib install dirs for PostgreSQL $pg" >&2
     exit 1
   fi
 
-  package_root=""
-  if [[ "$control_file" == */usr/share/postgresql/*/extension/pg_eviltransform.control ]]; then
-    package_root="${control_file%/usr/share/postgresql/*/extension/pg_eviltransform.control}"
-  elif [[ "$control_file" == */share/postgresql/*/extension/pg_eviltransform.control ]]; then
-    package_root="${control_file%/share/postgresql/*/extension/pg_eviltransform.control}"
-  fi
-  if [[ -z "$package_root" || ! -d "$package_root" ]]; then
-    echo "failed to resolve package root from control path: $control_file" >&2
+  shopt -s nullglob
+  sql_files=("$ext_dir"/pg_eviltransform--*.sql)
+  if [[ ${#sql_files[@]} -eq 0 ]]; then
+    echo "no SQL files generated in $ext_dir for PostgreSQL $pg" >&2
     exit 1
   fi
 
+  build_dir="$ROOT_DIR/target/pgrx-pkg/pg$pg"
   deb_root="$build_dir/deb"
   rm -rf "$deb_root"
-  mkdir -p "$deb_root/DEBIAN"
-  cp -a "$package_root/." "$deb_root/"
+  mkdir -p \
+    "$deb_root/DEBIAN" \
+    "$deb_root/usr/share/postgresql/$pg/extension" \
+    "$deb_root/usr/lib/postgresql/$pg/lib"
 
-  control_path="$(find "$deb_root" -type f -path '*/extension/pg_eviltransform.control' | head -n 1)"
-  if [[ -f "$control_path" ]]; then
-    cp "$ROOT_DIR/src/pg_eviltransform.control" "$control_path"
+  cp "$ROOT_DIR/src/pg_eviltransform.control" "$deb_root/usr/share/postgresql/$pg/extension/pg_eviltransform.control"
+  cp "$lib_dir/pg_eviltransform.so" "$deb_root/usr/lib/postgresql/$pg/lib/"
+  cp "${sql_files[@]}" "$deb_root/usr/share/postgresql/$pg/extension/"
+
+  upgrade_files=("$ext_dir"/pg_eviltransform--*--*.sql)
+  if [[ ${#upgrade_files[@]} -gt 0 ]]; then
+    cp "${upgrade_files[@]}" "$deb_root/usr/share/postgresql/$pg/extension/"
   fi
 
   cat > "$deb_root/DEBIAN/control" <<CONTROL
