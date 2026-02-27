@@ -46,8 +46,7 @@ jobs:
             if [ ! -x "$PG_CONFIG" ]; then
               PG_CONFIG="$(command -v pg_config)"
             fi
-            export PGRX_HOME=/work/target/.pgrx
-            cargo pgrx init --no-run --pg18="$PG_CONFIG"
+            cargo pgrx init --pg18="$PG_CONFIG"
             build_dir=/tmp/pgrx-pkg
             rm -rf "$build_dir"
             cargo pgrx package -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG" --out-dir "$build_dir"

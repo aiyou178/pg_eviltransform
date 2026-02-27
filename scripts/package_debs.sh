@@ -6,7 +6,6 @@ OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
 EXT_VERSION="${EXT_VERSION:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
 PG_VERSIONS=(14 15 16 17 18)
 ARCH="$(dpkg --print-architecture)"
-PGRX_HOME="${PGRX_HOME:-$ROOT_DIR/target/.pgrx}"
 
 mkdir -p "$OUT_DIR"
 
@@ -20,8 +19,7 @@ for pg in "${PG_VERSIONS[@]}"; do
   fi
 done
 
-export PGRX_HOME
-cargo pgrx init --no-run \
+cargo pgrx init \
   --pg14=/usr/lib/postgresql/14/bin/pg_config \
   --pg15=/usr/lib/postgresql/15/bin/pg_config \
   --pg16=/usr/lib/postgresql/16/bin/pg_config \
