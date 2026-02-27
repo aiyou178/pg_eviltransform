@@ -49,7 +49,7 @@ for deb in "${DEBS[@]}"; do
     --version "$EXT_VERSION" \
     --iteration "1" \
     --architecture "$RPM_ARCH" \
-    --maintainer "Open Source <opensource@example.com>" \
+    --maintainer "Liang Zhanzhao <liangzhanzhao1985@gmail.com>" \
     --description "transformation of bd09, gcj02 and other coordinate supported by postgis ST_Transform" \
     --chdir "$root" \
     --package "$OUT_DIR" \

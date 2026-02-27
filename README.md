@@ -60,8 +60,8 @@ If you use the regex-based SQL approach, cite:
 
 Packaging note:
 
-- DEB packages hard-depend only on PostgreSQL server packages.
-- PostGIS is kept as a suggested package to avoid pulling a large dependency tree during `apt install`.
+- DEB packages have no hard runtime package dependency to keep installation lightweight.
+- PostgreSQL/PostGIS are kept as suggested packages to avoid pulling a large dependency tree during `apt install`.
 - Runtime still requires PostGIS (`CREATE EXTENSION postgis`) before `CREATE EXTENSION pg_eviltransform`.
 
 ## Build

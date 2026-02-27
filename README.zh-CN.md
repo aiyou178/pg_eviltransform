@@ -60,8 +60,8 @@ Regex SQL 方案参考专利：
 
 打包说明：
 
-- DEB 包仅对 PostgreSQL 主包做硬依赖。
-- PostGIS 作为建议依赖（`Suggests`），避免 `apt install` 时自动拉取大量 GIS 依赖链。
+- DEB 包不设置硬依赖，保持安装轻量。
+- PostgreSQL/PostGIS 作为建议依赖（`Suggests`），避免 `apt install` 时自动拉取大量 GIS 依赖链。
 - 运行时仍需要先安装并创建 PostGIS（`CREATE EXTENSION postgis`），再创建 `pg_eviltransform`。
 
 ## 构建

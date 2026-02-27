@@ -73,9 +73,8 @@ Version: ${EXT_VERSION}
 Section: database
 Priority: optional
 Architecture: ${ARCH}
-Maintainer: Open Source <opensource@example.com>
-Depends: postgresql-${pg}
-Suggests: postgresql-${pg}-postgis-3
+Maintainer: Liang Zhanzhao <liangzhanzhao1985@gmail.com>
+Suggests: postgresql-${pg}, postgresql-${pg}-postgis-3
 Description: transformation of bd09, gcj02 and other coordinate supported by postgis ST_Transform
  Rust+pgrx extension for coordinate transformation using WGS84 (SRID 4326) as intermediary.
 CONTROL
