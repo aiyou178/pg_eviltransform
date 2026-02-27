@@ -46,8 +46,21 @@ jobs:
             if [ ! -x "$PG_CONFIG" ]; then
               PG_CONFIG="$(command -v pg_config)"
             fi
-            cargo pgrx init --pg18="$PG_CONFIG"
-            cargo pgrx install --release --features pg18 --no-default-features --pg-config "$PG_CONFIG"
+            export PGRX_HOME=/work/target/.pgrx
+            cargo pgrx init --no-run --pg18="$PG_CONFIG"
+            build_dir=/tmp/pgrx-pkg
+            rm -rf "$build_dir"
+            cargo pgrx package -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG" --out-dir "$build_dir"
+            package_root="$build_dir"
+            if [ ! -d "$package_root/usr" ]; then
+              package_root="$(find "$build_dir" -maxdepth 1 -type d -name "pg_eviltransform-pg*" | head -n 1)"
+            fi
+            if [ -z "$package_root" ] || [ ! -d "$package_root/usr" ]; then
+              echo "failed to resolve packaged extension directory" >&2
+              exit 1
+            fi
+            cp -a "$package_root/usr/." /usr/
+            psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
             ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt
           '
 

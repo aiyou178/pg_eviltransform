@@ -126,11 +126,11 @@ scripts/release_debian_trixie.sh
 
 This builds `.deb` artifacts under `dist/`:
 
-- `postgresql-14-pg-eviltransform_<version>_trixie_amd64.deb`
-- `postgresql-15-pg-eviltransform_<version>_trixie_amd64.deb`
-- `postgresql-16-pg-eviltransform_<version>_trixie_amd64.deb`
-- `postgresql-17-pg-eviltransform_<version>_trixie_amd64.deb`
-- `postgresql-18-pg-eviltransform_<version>_trixie_amd64.deb`
+- `postgresql-14-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-15-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-16-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-17-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
 
 ## License
 
