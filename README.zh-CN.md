@@ -87,11 +87,18 @@ cargo pgrx test pg18 --features pg18
 ## 使用示例
 
 ```sql
--- WGS84 (4326) -> GCJ02 (990001)
+-- 推荐：直接使用字面量（不需要记忆自定义 SRID 数字）
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'GCJ02');
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'BD09');
+
+-- 等价的数字 SRID 写法
 SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 990001);
 
 -- BD09 (990002) -> Web Mercator (3857)
 SELECT ST_EvilTransform(ST_SetSRID('POINT(120.011070620552 30.0038830555128)'::geometry, 990002), 3857);
+
+-- from_proj / to_proj 重载 + 字面量
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 'GCJ02');
 ```
 
 ## 基准测试（PG18）

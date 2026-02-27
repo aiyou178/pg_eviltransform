@@ -87,11 +87,18 @@ cargo pgrx test pg18 --features pg18
 ## Usage
 
 ```sql
--- WGS84 (4326) -> GCJ02 (990001)
+-- Preferred: explicit literals (no need to remember custom SRID numbers)
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'GCJ02');
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'BD09');
+
+-- Equivalent numeric custom SRID form
 SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 990001);
 
 -- BD09 (990002) -> Web Mercator (3857)
 SELECT ST_EvilTransform(ST_SetSRID('POINT(120.011070620552 30.0038830555128)'::geometry, 990002), 3857);
+
+-- from_proj / to_proj overload with literals
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 'GCJ02');
 ```
 
 ## Benchmark (PG18)
