@@ -1,0 +1,72 @@
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types:
+      - published
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            TAG_NAME="${{ github.event.release.tag_name }}"
+          else
+            TAG_NAME="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${TAG_NAME#v}"
+          echo "TAG_NAME=${TAG_NAME}" >> "$GITHUB_ENV"
+          echo "EXT_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Resolved version: ${VERSION}"
+
+      - name: Build release image
+        run: docker build -f docker/Dockerfile.release-trixie -t pg-eviltransform-release:ci .
+
+      - name: Build DEB packages (PG14-18)
+        run: |
+          mkdir -p dist
+          docker run --rm \
+            -e EXT_VERSION="${EXT_VERSION}" \
+            -e OUT_DIR=/out \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -v "$GITHUB_WORKSPACE/dist:/out" \
+            pg-eviltransform-release:ci \
+            /work/scripts/package_debs.sh
+
+      - name: Install FPM tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ruby ruby-dev build-essential rpm
+          sudo gem install --no-document fpm
+
+      - name: Build RPM packages from DEBs
+        run: |
+          EXT_VERSION="${EXT_VERSION}" OUT_DIR="$GITHUB_WORKSPACE/dist" scripts/package_rpms.sh
+
+      - name: List artifacts
+        run: ls -lah dist
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-packages-${{ env.TAG_NAME }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+
+      - name: Publish assets to GitHub release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
+EXT_VERSION="${EXT_VERSION:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
+
+if ! command -v fpm >/dev/null 2>&1; then
+  echo "fpm is required to build RPM packages" >&2
+  exit 1
+fi
+
+if ! command -v dpkg-deb >/dev/null 2>&1; then
+  echo "dpkg-deb is required to unpack DEB packages before RPM conversion" >&2
+  exit 1
+fi
+
+shopt -s nullglob
+DEBS=("$OUT_DIR"/postgresql-*-pg-eviltransform_"${EXT_VERSION}"_trixie_amd64.deb)
+if [[ ${#DEBS[@]} -eq 0 ]]; then
+  echo "no DEB artifacts found in $OUT_DIR for version $EXT_VERSION" >&2
+  exit 1
+fi
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+for deb in "${DEBS[@]}"; do
+  base="$(basename "$deb")"
+  pg="$(echo "$base" | sed -E 's/^postgresql-([0-9]+)-pg-eviltransform_.*/\1/')"
+  if [[ -z "$pg" || "$pg" == "$base" ]]; then
+    echo "failed to parse PostgreSQL major version from $base" >&2
+    exit 1
+  fi
+
+  root="$tmp_dir/root-$pg"
+  rm -rf "$root"
+  mkdir -p "$root"
+  dpkg-deb -x "$deb" "$root"
+
+  fpm -s dir -t rpm \
+    --name "postgresql-${pg}-pg-eviltransform" \
+    --version "$EXT_VERSION" \
+    --iteration "1" \
+    --architecture "x86_64" \
+    --maintainer "Open Source <opensource@example.com>" \
+    --description "transformation of bd09, gcj02 and other coordinate supported by postgis ST_Transform" \
+    --chdir "$root" \
+    --package "$OUT_DIR" \
+    usr
+
+done
+
+echo "[rpm] wrote packages to $OUT_DIR"

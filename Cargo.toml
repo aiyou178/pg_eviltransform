@@ -1,0 +1,35 @@
+[package]
+description = "transformation of bd09, gcj02 and other coordinate supported by postgis ST_Transform"
+edition = "2024"
+license = "MIT"
+name = "pg_eviltransform"
+version = "0.0.2"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+default = []
+extension = ["dep:pgrx"]
+pg14 = ["extension", "pgrx/pg14"]
+pg15 = ["extension", "pgrx/pg15"]
+pg16 = ["extension", "pgrx/pg16"]
+pg17 = ["extension", "pgrx/pg17"]
+pg18 = ["extension", "pgrx/pg18"]
+pg_test = ["extension", "dep:pgrx-tests", "pgrx-tests/pg18"]
+
+[dependencies]
+pgrx = {version = "=0.17.0", optional = true}
+pgrx-tests = {version = "=0.17.0", optional = true}
+
+[build-dependencies]
+cc = "1.2"
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+panic = "unwind"

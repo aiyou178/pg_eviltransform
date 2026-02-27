@@ -1,0 +1,13 @@
+PG18 benchmark report (ROWS=200000)
+
+Compared functions:
+- ST_EvilTransform
+- Regex_EvilTransform
+
+Scenario: 4326 -> 990001
+- ST_EvilTransform: 92.402 ms
+- Regex_EvilTransform: 2832.821 ms
+
+Scenario: 990002 -> 3857 (via 4326)
+- ST_EvilTransform: 183.856 ms
+- Regex_EvilTransform: 8393.272 ms

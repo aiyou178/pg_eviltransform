@@ -1,0 +1,6 @@
+comment = 'transformation of bd09, gcj02 and other coordinate supported by postgis ST_Transform'
+default_version = '0.0.2'
+module_pathname = '$libdir/pg_eviltransform'
+relocatable = true
+superuser = false
+requires = 'postgis'

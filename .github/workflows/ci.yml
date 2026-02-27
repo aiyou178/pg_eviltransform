@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  rust-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run Rust unit tests
+        run: cargo test --lib
+
+  benchmark-pg18:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build benchmark image
+        run: docker build -f docker/Dockerfile.benchmark-trixie -t pg-eviltransform-benchmark:ci .
+
+      - name: Start benchmark container
+        run: |
+          docker run -d --name pg-eviltransform-benchmark \
+            -e POSTGRES_HOST_AUTH_METHOD=trust \
+            -e POSTGRES_DB=postgres \
+            -v "$GITHUB_WORKSPACE:/work" \
+            pg-eviltransform-benchmark:ci
+
+      - name: Build extension and run benchmark
+        run: |
+          docker exec pg-eviltransform-benchmark bash -lc '
+            set -euo pipefail
+            until pg_isready -h 127.0.0.1 -p 5432 -U postgres >/dev/null 2>&1; do
+              sleep 1
+            done
+            cd /work
+            cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
+            cargo pgrx install --release --features pg18 --no-default-features --pg-config /usr/lib/postgresql/18/bin/pg_config
+            ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt
+          '
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-pg18-report
+          path: benchmark_pg18_report.txt
+
+      - name: Show benchmark report tail
+        if: always()
+        run: tail -n 120 benchmark_pg18_report.txt || true
+
+      - name: Container logs
+        if: always()
+        run: docker logs pg-eviltransform-benchmark || true
+
+      - name: Cleanup container
+        if: always()
+        run: docker rm -f pg-eviltransform-benchmark || true

@@ -1,0 +1,7 @@
+/target/
+/dist/
+*.deb
+
+.vscode/**
+.DS_Store
+.autoenv*

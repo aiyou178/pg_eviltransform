@@ -1,0 +1,49 @@
+# Release build image for pg_eviltransform packages on Debian trixie (PG14-18)
+ARG BASE_IMAGE=docker.m.daocloud.io/postgres:18.3-trixie
+FROM ${BASE_IMAGE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV PATH=/root/.cargo/bin:$PATH
+ENV RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+ENV RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    pkg-config \
+    clang \
+    llvm-dev \
+    libc6-dev \
+    librttopo-dev \
+    libgeos-dev \
+    dpkg-dev \
+    postgresql-client-14 \
+    postgresql-client-15 \
+    postgresql-client-16 \
+    postgresql-client-17 \
+    postgresql-client-18 \
+    postgresql-server-dev-14 \
+    postgresql-server-dev-15 \
+    postgresql-server-dev-16 \
+    postgresql-server-dev-17 \
+    postgresql-server-dev-18; \
+  update-ca-certificates; \
+  rm -rf /var/lib/apt/lists/* /tmp/*
+
+RUN set -eux; \
+  mkdir -p /root/.cargo; \
+  printf '%s\n' \
+    '[source.crates-io]' \
+    'replace-with = "tuna"' \
+    '[source.tuna]' \
+    'registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"' \
+    > /root/.cargo/config.toml; \
+  curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal; \
+  rustup default stable; \
+  cargo install --locked cargo-pgrx --version 0.17.0
+
+WORKDIR /work
+COPY . /work
