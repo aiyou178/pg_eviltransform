@@ -32,8 +32,9 @@ jobs:
             -e OUT_DIR=/out \
             -v "$GITHUB_WORKSPACE:/work" \
             -v "$GITHUB_WORKSPACE/dist:/out" \
+            --entrypoint /bin/bash \
             pg-eviltransform-release:ci \
-            /work/scripts/package_debs.sh
+            -lc 'set -euo pipefail; ls -l /work/scripts; /work/scripts/package_debs.sh'
 
       - name: Install FPM tooling
         run: |
