@@ -168,7 +168,7 @@ mod extension {
         pg_sys::Datum::from(out_varlena.cast::<pg_sys::varlena>())
     }
 
-    #[pg_extern(immutable, strict, parallel_safe, name = "ST_EvilTransform")]
+    #[pg_extern(immutable, strict, parallel_safe, name = "st_eviltransform")]
     fn st_eviltransform_integer(geom: AnyElement, dst_srid: i32) -> AnyElement {
         let fns = postgis_fns();
         let input = geom.datum();
@@ -242,7 +242,7 @@ mod extension {
         END;
         $$;
 
-        CREATE FUNCTION ST_EvilTransform(geom geometry, to_proj text)
+        CREATE FUNCTION st_eviltransform(geom geometry, to_proj text)
         RETURNS geometry
         LANGUAGE SQL
         IMMUTABLE STRICT PARALLEL SAFE
@@ -254,15 +254,15 @@ mod extension {
             eviltransform_internal.__parse_custom_srid(to_proj) AS dst_custom
         )
         SELECT CASE
-          WHEN dst_custom IS NOT NULL THEN ST_EvilTransform(geom, dst_custom)
+          WHEN dst_custom IS NOT NULL THEN st_eviltransform(geom, dst_custom)
           WHEN src_srid IN (990001, 990002)
-            THEN ST_Transform(ST_EvilTransform(geom, 4326), to_proj)
+            THEN ST_Transform(st_eviltransform(geom, 4326), to_proj)
           ELSE ST_Transform(geom, to_proj)
         END
         FROM params;
         $$;
 
-        CREATE FUNCTION ST_EvilTransform(geom geometry, from_proj text, to_srid integer)
+        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_srid integer)
         RETURNS geometry
         LANGUAGE SQL
         IMMUTABLE STRICT PARALLEL SAFE
@@ -277,13 +277,13 @@ mod extension {
           WHEN src_custom IS NULL AND dst_srid NOT IN (990001, 990002)
             THEN ST_Transform(geom, from_proj, dst_srid)
           WHEN src_custom IS NOT NULL
-            THEN ST_EvilTransform(ST_SetSRID(geom, src_custom), dst_srid)
-          ELSE ST_EvilTransform(ST_Transform(geom, from_proj, 4326), dst_srid)
+            THEN st_eviltransform(ST_SetSRID(geom, src_custom), dst_srid)
+          ELSE st_eviltransform(ST_Transform(geom, from_proj, 4326), dst_srid)
         END
         FROM params;
         $$;
 
-        CREATE FUNCTION ST_EvilTransform(geom geometry, from_proj text, to_proj text)
+        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_proj text)
         RETURNS geometry
         LANGUAGE SQL
         IMMUTABLE STRICT PARALLEL SAFE
@@ -298,10 +298,10 @@ mod extension {
           WHEN src_custom IS NULL AND dst_custom IS NULL
             THEN ST_Transform(geom, from_proj, to_proj)
           WHEN src_custom IS NOT NULL AND dst_custom IS NOT NULL
-            THEN ST_EvilTransform(ST_SetSRID(geom, src_custom), dst_custom)
+            THEN st_eviltransform(ST_SetSRID(geom, src_custom), dst_custom)
           WHEN src_custom IS NOT NULL
-            THEN ST_Transform(ST_EvilTransform(ST_SetSRID(geom, src_custom), 4326), to_proj)
-          ELSE ST_EvilTransform(ST_Transform(geom, from_proj, 4326), dst_custom)
+            THEN ST_Transform(st_eviltransform(ST_SetSRID(geom, src_custom), 4326), to_proj)
+          ELSE st_eviltransform(ST_Transform(geom, from_proj, 4326), dst_custom)
         END
         FROM params;
         $$;
