@@ -50,15 +50,23 @@ jobs:
             build_dir=/tmp/pgrx-pkg
             rm -rf "$build_dir"
             cargo pgrx package -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG" --out-dir "$build_dir"
-            package_root="$build_dir"
-            if [ ! -d "$package_root/usr" ]; then
-              package_root="$(find "$build_dir" -maxdepth 1 -type d -name "pg_eviltransform-pg*" | head -n 1)"
-            fi
-            if [ -z "$package_root" ] || [ ! -d "$package_root/usr" ]; then
-              echo "failed to resolve packaged extension directory" >&2
+            control_file="$(find "$build_dir" -type f -path "*/extension/pg_eviltransform.control" | head -n 1)"
+            if [ -z "$control_file" ]; then
+              echo "failed to find packaged control file under $build_dir" >&2
+              find "$build_dir" -maxdepth 4 -mindepth 1 -print >&2 || true
               exit 1
             fi
-            cp -a "$package_root/usr/." /usr/
+            package_root=""
+            if [[ "$control_file" == */usr/share/postgresql/*/extension/pg_eviltransform.control ]]; then
+              package_root="${control_file%/usr/share/postgresql/*/extension/pg_eviltransform.control}"
+            elif [[ "$control_file" == */share/postgresql/*/extension/pg_eviltransform.control ]]; then
+              package_root="${control_file%/share/postgresql/*/extension/pg_eviltransform.control}"
+            fi
+            if [ -z "$package_root" ] || [ ! -d "$package_root" ]; then
+              echo "failed to resolve package root from control path: $control_file" >&2
+              exit 1
+            fi
+            cp -a "$package_root/." /
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
             ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt
           '

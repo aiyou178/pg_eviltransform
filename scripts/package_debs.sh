@@ -42,23 +42,30 @@ for pg in "${PG_VERSIONS[@]}"; do
     --pg-config "$pg_config" \
     --out-dir "$build_dir"
 
-  package_root=""
-  if [[ -d "$build_dir/usr" ]]; then
-    package_root="$build_dir"
-  else
-    package_root="$(find "$build_dir" -maxdepth 1 -type d -name 'pg_eviltransform-pg*' | head -n 1)"
+  control_file="$(find "$build_dir" -type f -path '*/extension/pg_eviltransform.control' | head -n 1)"
+  if [[ -z "$control_file" ]]; then
+    echo "failed to find packaged control file under $build_dir for PostgreSQL $pg" >&2
+    find "$build_dir" -maxdepth 4 -mindepth 1 -print >&2 || true
+    exit 1
   fi
-  if [[ -z "$package_root" ]]; then
-    echo "failed to find cargo pgrx package output for PostgreSQL $pg" >&2
+
+  package_root=""
+  if [[ "$control_file" == */usr/share/postgresql/*/extension/pg_eviltransform.control ]]; then
+    package_root="${control_file%/usr/share/postgresql/*/extension/pg_eviltransform.control}"
+  elif [[ "$control_file" == */share/postgresql/*/extension/pg_eviltransform.control ]]; then
+    package_root="${control_file%/share/postgresql/*/extension/pg_eviltransform.control}"
+  fi
+  if [[ -z "$package_root" || ! -d "$package_root" ]]; then
+    echo "failed to resolve package root from control path: $control_file" >&2
     exit 1
   fi
 
   deb_root="$build_dir/deb"
   rm -rf "$deb_root"
   mkdir -p "$deb_root/DEBIAN"
-  cp -a "$package_root/usr" "$deb_root/"
+  cp -a "$package_root/." "$deb_root/"
 
-  control_path="$deb_root/usr/share/postgresql/$pg/extension/pg_eviltransform.control"
+  control_path="$(find "$deb_root" -type f -path '*/extension/pg_eviltransform.control' | head -n 1)"
   if [[ -f "$control_path" ]]; then
     cp "$ROOT_DIR/src/pg_eviltransform.control" "$control_path"
   fi
