@@ -6,17 +6,11 @@ IMAGE_NAME="${IMAGE_NAME:-pg_eviltransform/trixie-builder:local}"
 EXT_VERSION="${1:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
 OUT_DIR="${2:-$ROOT_DIR/dist}"
 OUT_DIR="$(cd "$(dirname "$OUT_DIR")" && pwd)/$(basename "$OUT_DIR")"
-PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18}"
-INCLUDE_PG19_BETA=0
+PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18 19}"
 BASE_IMAGE_SET="${BASE_IMAGE+x}"
 
-if [[ " $PG_VERSIONS " == *" 19 "* ]]; then
-  INCLUDE_PG19_BETA=1
-  if [[ -z "$BASE_IMAGE_SET" ]]; then
-    BASE_IMAGE="postgres:19beta1-trixie"
-  fi
-elif [[ -z "$BASE_IMAGE_SET" ]]; then
-  BASE_IMAGE="postgres:18.3-trixie"
+if [[ -z "$BASE_IMAGE_SET" ]]; then
+  BASE_IMAGE="postgres:19beta1-trixie"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -24,7 +18,6 @@ mkdir -p "$OUT_DIR"
 echo "[release] building Docker image on Debian trixie"
 build_args=(
   --build-arg "BASE_IMAGE=$BASE_IMAGE"
-  --build-arg "INCLUDE_PG19_BETA=$INCLUDE_PG19_BETA"
 )
 if [[ -n "${DEBIAN_MIRROR:-}" ]]; then
   build_args+=(--build-arg "DEBIAN_MIRROR=$DEBIAN_MIRROR")

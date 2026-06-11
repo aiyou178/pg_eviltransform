@@ -1,11 +1,9 @@
 # syntax=docker/dockerfile:1.7
-# Release build image for pg_eviltransform packages on Debian trixie (PG14-18,
-# with opt-in PG19 beta packages).
-ARG BASE_IMAGE=postgres:18.3-trixie
+# Release build image for pg_eviltransform packages on Debian trixie (PG14-19).
+ARG BASE_IMAGE=postgres:19beta1-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG INCLUDE_PG19_BETA=0
 ARG PGRX_GIT_REV=15017e6461222d1882ad0b5ba16eee9b9bccaf9c
 ARG DEBIAN_MIRROR=
 ARG DEBIAN_SECURITY_MIRROR=
@@ -46,22 +44,19 @@ RUN set -eux; \
     postgresql-client-16 \
     postgresql-client-17 \
     postgresql-client-18 \
+    postgresql-client-19 \
     postgresql-14 \
     postgresql-15 \
     postgresql-16 \
     postgresql-17 \
     postgresql-18 \
+    postgresql-19 \
     postgresql-server-dev-14 \
     postgresql-server-dev-15 \
     postgresql-server-dev-16 \
     postgresql-server-dev-17 \
-    postgresql-server-dev-18"; \
-  if [ "$INCLUDE_PG19_BETA" = "1" ]; then \
-    pg_packages="$pg_packages \
-      postgresql-client-19 \
-      postgresql-19 \
-      postgresql-server-dev-19"; \
-  fi; \
+    postgresql-server-dev-18 \
+    postgresql-server-dev-19"; \
   apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \

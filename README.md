@@ -56,7 +56,7 @@ If you use the regex-based SQL approach, cite:
 - Rust stable
 - `cargo-pgrx` from the pinned pgrx PG19 beta branch:
   `cargo install --locked --git https://github.com/pgcentralfoundation/pgrx --rev 15017e6461222d1882ad0b5ba16eee9b9bccaf9c cargo-pgrx`
-- PostgreSQL + PostGIS (PG 14-18 supported; PG19 beta is experimental)
+- PostgreSQL + PostGIS (PG 14-19 packages; PG19 beta is experimental until PostgreSQL 19 GA)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
 
 Packaging note:
@@ -146,7 +146,7 @@ Experimental PG19 beta run (`postgres:19beta1-trixie`, `ROWS=200000`, report: `b
 | `4326 -> 990001` | `68.468 ms` | `2800.963 ms` | `40.9x` |
 | `990002 -> 3857 (via 4326)` | `188.930 ms` | `7871.404 ms` | `41.7x` |
 
-## Release Debian (Trixie, PG14-18)
+## Release Debian (Trixie, PG14-19)
 
 ```bash
 scripts/release_debian_trixie.sh
@@ -159,14 +159,9 @@ This builds `.deb` artifacts under `dist/`:
 - `postgresql-16-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-17-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-19-pg-eviltransform_<version>_trixie_<arch>.deb`
 
 GitHub Release CI publishes both `amd64` and `arm64` package artifacts (`.deb` + `.rpm`).
-
-Experimental PG19 beta packages are opt-in and are not published by the stable tag workflow:
-
-```bash
-PG_VERSIONS="19" scripts/release_debian_trixie.sh
-```
 
 ## License
 

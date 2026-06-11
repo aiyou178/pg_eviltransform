@@ -56,7 +56,7 @@ Regex SQL 方案参考专利：
 - Rust stable
 - 使用固定 pgrx PG19 beta 分支安装 `cargo-pgrx`：
   `cargo install --locked --git https://github.com/pgcentralfoundation/pgrx --rev 15017e6461222d1882ad0b5ba16eee9b9bccaf9c cargo-pgrx`
-- PostgreSQL + PostGIS（稳定支持 PG 14-18；PG19 beta 为实验支持）
+- PostgreSQL + PostGIS（发布 PG 14-19 包；PG19 beta 在 PostgreSQL 19 GA 前仍为实验支持）
 - `librttopo-dev`（用于原生 GSERIALIZED 快速路径）
 
 打包说明：
@@ -146,7 +146,7 @@ ROWS=500000 PGDATABASE=testdb scripts/benchmark_pg18.sh /tmp/bench_pg18.txt
 | `4326 -> 990001` | `68.468 ms` | `2800.963 ms` | `40.9x` |
 | `990002 -> 3857 (via 4326)` | `188.930 ms` | `7871.404 ms` | `41.7x` |
 
-## Debian Trixie 发版（PG14-18）
+## Debian Trixie 发版（PG14-19）
 
 ```bash
 scripts/release_debian_trixie.sh
@@ -159,14 +159,9 @@ scripts/release_debian_trixie.sh
 - `postgresql-16-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-17-pg-eviltransform_<version>_trixie_<arch>.deb`
 - `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
+- `postgresql-19-pg-eviltransform_<version>_trixie_<arch>.deb`
 
 GitHub Release CI 会同时发布 `amd64` 和 `arm64` 两种架构的包产物（`.deb` + `.rpm`）。
-
-实验性 PG19 beta 包需要显式开启，稳定 tag 工作流不会发布：
-
-```bash
-PG_VERSIONS="19" scripts/release_debian_trixie.sh
-```
 
 ## 许可证
 

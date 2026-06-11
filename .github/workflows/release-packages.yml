@@ -55,7 +55,7 @@ jobs:
             -t pg-eviltransform-release:ci \
             .
 
-      - name: Build DEB packages (PG14-18 stable)
+      - name: Build DEB packages (PG14-19)
         run: |
           mkdir -p dist
           docker run --rm \
