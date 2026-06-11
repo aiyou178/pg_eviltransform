@@ -15,16 +15,17 @@ path = "src/bin/pgrx_embed_pg_eviltransform.rs"
 [features]
 default = []
 extension = ["dep:pgrx"]
-pg14 = ["extension", "pgrx/pg14"]
-pg15 = ["extension", "pgrx/pg15"]
-pg16 = ["extension", "pgrx/pg16"]
-pg17 = ["extension", "pgrx/pg17"]
-pg18 = ["extension", "pgrx/pg18"]
-pg_test = ["extension", "dep:pgrx-tests", "pgrx-tests/pg18"]
+pg14 = ["extension", "pgrx/pg14", "pgrx-tests?/pg14"]
+pg15 = ["extension", "pgrx/pg15", "pgrx-tests?/pg15"]
+pg16 = ["extension", "pgrx/pg16", "pgrx-tests?/pg16"]
+pg17 = ["extension", "pgrx/pg17", "pgrx-tests?/pg17"]
+pg18 = ["extension", "pgrx/pg18", "pgrx-tests?/pg18"]
+pg19 = ["extension", "pgrx/pg19", "pgrx-tests?/pg19"]
+pg_test = ["extension", "dep:pgrx-tests"]
 
 [dependencies]
-pgrx = {version = "=0.17.0", optional = true}
-pgrx-tests = {version = "=0.17.0", optional = true}
+pgrx = {git = "https://github.com/pgcentralfoundation/pgrx", rev = "15017e6461222d1882ad0b5ba16eee9b9bccaf9c", optional = true}
+pgrx-tests = {git = "https://github.com/pgcentralfoundation/pgrx", rev = "15017e6461222d1882ad0b5ba16eee9b9bccaf9c", optional = true}
 
 [build-dependencies]
 cc = "1.2"

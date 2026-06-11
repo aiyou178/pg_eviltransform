@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPORT_PATH="${1:-$ROOT_DIR/benchmark_pg18_report.txt}"
 ROWS="${ROWS:-200000}"
+PG_MAJOR="${PG_MAJOR:-18}"
 PGHOST="${PGHOST:-127.0.0.1}"
 PGPORT="${PGPORT:-5432}"
 PGUSER="${PGUSER:-postgres}"
@@ -11,7 +12,11 @@ PGDATABASE="${PGDATABASE:-postgres}"
 
 export PGHOST PGPORT PGUSER PGDATABASE
 
-cat > /tmp/benchmark_pg18.sql <<SQL
+if [[ "$REPORT_PATH" == "$ROOT_DIR/benchmark_pg18_report.txt" && "$PG_MAJOR" != "18" ]]; then
+  REPORT_PATH="$ROOT_DIR/benchmark_pg${PG_MAJOR}_report.txt"
+fi
+
+cat > "/tmp/benchmark_pg${PG_MAJOR}.sql" <<SQL
 \\timing on
 SET client_min_messages TO warning;
 SET jit = off;
@@ -21,10 +26,10 @@ CREATE EXTENSION IF NOT EXISTS pg_eviltransform;
 
 DO \$\$
 BEGIN
-  IF current_setting('server_version_num')::int < 180000
-     OR current_setting('server_version_num')::int >= 190000 THEN
-    RAISE EXCEPTION 'benchmark_pg18.sh requires PostgreSQL 18, current version_num=%',
-      current_setting('server_version_num');
+  IF current_setting('server_version_num')::int < (${PG_MAJOR} * 10000)
+     OR current_setting('server_version_num')::int >= ((${PG_MAJOR} + 1) * 10000) THEN
+    RAISE EXCEPTION 'benchmark_pg18.sh requires PostgreSQL %, current version_num=%',
+      ${PG_MAJOR}, current_setting('server_version_num');
   END IF;
 END
 \$\$;
@@ -81,6 +86,6 @@ FROM (
 ) t;
 SQL
 
-psql -v ON_ERROR_STOP=1 -f /tmp/benchmark_pg18.sql 2>&1 | tee "$REPORT_PATH"
+psql -v ON_ERROR_STOP=1 -f "/tmp/benchmark_pg${PG_MAJOR}.sql" 2>&1 | tee "$REPORT_PATH"
 
 echo "Benchmark report written to $REPORT_PATH"

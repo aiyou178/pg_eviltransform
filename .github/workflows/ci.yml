@@ -25,14 +25,30 @@ jobs:
       - name: Run Rust unit tests
         run: cargo test --lib
 
-  benchmark-pg18:
+  benchmark-postgres:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: amd64
+          - pg_label: pg18
+            pg_major: "18"
+            base_image: postgres:18.3-trixie
+            arch: amd64
             runner: ubuntu-24.04
-          - arch: arm64
+          - pg_label: pg18
+            pg_major: "18"
+            base_image: postgres:18.3-trixie
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - pg_label: pg19-beta
+            pg_major: "19"
+            base_image: postgres:19beta1-trixie
+            arch: amd64
+            runner: ubuntu-24.04
+          - pg_label: pg19-beta
+            pg_major: "19"
+            base_image: postgres:19beta1-trixie
+            arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -40,39 +56,69 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build benchmark image
-        run: docker build -f docker/Dockerfile.benchmark-trixie -t pg-eviltransform-benchmark:ci .
+        run: |
+          build_args=(
+            --build-arg "BASE_IMAGE=${{ matrix.base_image }}"
+            --build-arg "PG_MAJOR=${{ matrix.pg_major }}"
+          )
+          if [[ -n "${DEBIAN_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "DEBIAN_MIRROR=$DEBIAN_MIRROR")
+          fi
+          if [[ -n "${DEBIAN_SECURITY_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "DEBIAN_SECURITY_MIRROR=$DEBIAN_SECURITY_MIRROR")
+          fi
+          if [[ -n "${PGDG_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "PGDG_MIRROR=$PGDG_MIRROR")
+          fi
+          if [[ -n "${RUSTUP_DIST_SERVER:-}" ]]; then
+            build_args+=(--build-arg "RUSTUP_DIST_SERVER=$RUSTUP_DIST_SERVER")
+          fi
+          if [[ -n "${RUSTUP_UPDATE_ROOT:-}" ]]; then
+            build_args+=(--build-arg "RUSTUP_UPDATE_ROOT=$RUSTUP_UPDATE_ROOT")
+          fi
+          if [[ -n "${CARGO_REGISTRIES_CRATES_IO_INDEX:-}" ]]; then
+            build_args+=(--build-arg "CARGO_REGISTRIES_CRATES_IO_INDEX=$CARGO_REGISTRIES_CRATES_IO_INDEX")
+          fi
+
+          docker build \
+            "${build_args[@]}" \
+            -f docker/Dockerfile.benchmark-trixie \
+            -t pg-eviltransform-benchmark-${{ matrix.pg_label }}:ci \
+            .
 
       - name: Start benchmark container
         run: |
-          docker run -d --name pg-eviltransform-benchmark-${{ matrix.arch }} \
+          docker run -d --name pg-eviltransform-benchmark-${{ matrix.pg_label }}-${{ matrix.arch }} \
             -e POSTGRES_HOST_AUTH_METHOD=trust \
             -e POSTGRES_DB=postgres \
             -v "$GITHUB_WORKSPACE:/work" \
-            pg-eviltransform-benchmark:ci
+            pg-eviltransform-benchmark-${{ matrix.pg_label }}:ci
 
       - name: Build extension and run benchmark
         run: |
-          docker exec -u root pg-eviltransform-benchmark-${{ matrix.arch }} bash -lc '
+          docker exec -u root pg-eviltransform-benchmark-${{ matrix.pg_label }}-${{ matrix.arch }} bash -lc '
             set -euo pipefail
+            PG_MAJOR="${{ matrix.pg_major }}"
             until pg_isready -h 127.0.0.1 -p 5432 -U postgres >/dev/null 2>&1; do
               sleep 1
             done
             cd /work
-            PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config
+            PG_CONFIG="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config"
             if [ ! -x "$PG_CONFIG" ]; then
               PG_CONFIG="$(command -v pg_config)"
             fi
-            cargo pgrx init --pg18="$PG_CONFIG"
-            if ! cargo pgrx install -v --release --features pg18 --no-default-features --pg-config "$PG_CONFIG" 2>&1 | tee /tmp/pgrx_install.log; then
+            cargo pgrx init "--pg${PG_MAJOR}=$PG_CONFIG"
+            if ! cargo pgrx install -v --release --features "pg${PG_MAJOR}" --no-default-features --pg-config "$PG_CONFIG" 2>&1 | tee /tmp/pgrx_install.log; then
               tail -n 200 /tmp/pgrx_install.log >&2 || true
               err_msg="$(tail -n 30 /tmp/pgrx_install.log | sed ":a;N;\$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g")"
               echo "::error title=cargo pgrx install failed::${err_msg}"
               exit 1
             fi
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
-            if ! ROWS=50000 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh /work/benchmark_pg18_report.txt; then
-              tail -n 200 /work/benchmark_pg18_report.txt >&2 || true
-              err_msg="$(tail -n 40 /work/benchmark_pg18_report.txt | sed ":a;N;\$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g")"
+            report_path="/work/benchmark_pg${PG_MAJOR}_report.txt"
+            if ! ROWS=50000 PG_MAJOR="$PG_MAJOR" PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh "$report_path"; then
+              tail -n 200 "$report_path" >&2 || true
+              err_msg="$(tail -n 40 "$report_path" | sed ":a;N;\$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g")"
               echo "::error title=benchmark sql failed::${err_msg}"
               exit 1
             fi
@@ -81,17 +127,17 @@ jobs:
       - name: Upload benchmark report
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-pg18-report-${{ matrix.arch }}
-          path: benchmark_pg18_report.txt
+          name: benchmark-${{ matrix.pg_label }}-report-${{ matrix.arch }}
+          path: benchmark_pg${{ matrix.pg_major }}_report.txt
 
       - name: Show benchmark report tail
         if: always()
-        run: tail -n 120 benchmark_pg18_report.txt || true
+        run: tail -n 120 benchmark_pg${{ matrix.pg_major }}_report.txt || true
 
       - name: Container logs
         if: always()
-        run: docker logs pg-eviltransform-benchmark-${{ matrix.arch }} || true
+        run: docker logs pg-eviltransform-benchmark-${{ matrix.pg_label }}-${{ matrix.arch }} || true
 
       - name: Cleanup container
         if: always()
-        run: docker rm -f pg-eviltransform-benchmark-${{ matrix.arch }} || true
+        run: docker rm -f pg-eviltransform-benchmark-${{ matrix.pg_label }}-${{ matrix.arch }} || true

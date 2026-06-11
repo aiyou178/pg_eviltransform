@@ -1,0 +1,7 @@
+target/
+dist/
+.git/
+.DS_Store
+.venv*/
+benchmark_pg*_report*.txt
+*.log

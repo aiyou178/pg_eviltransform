@@ -4,29 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
 EXT_VERSION="${EXT_VERSION:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
-PG_VERSIONS=(14 15 16 17 18)
+PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18}"
 ARCH="$(dpkg --print-architecture)"
+read -r -a PG_VERSION_LIST <<< "$PG_VERSIONS"
+
+if [[ ${#PG_VERSION_LIST[@]} -eq 0 ]]; then
+  echo "PG_VERSIONS must contain at least one PostgreSQL major version" >&2
+  exit 2
+fi
 
 mkdir -p "$OUT_DIR"
 
 cd "$ROOT_DIR"
 
-for pg in "${PG_VERSIONS[@]}"; do
+init_args=()
+for pg in "${PG_VERSION_LIST[@]}"; do
+  if [[ ! "$pg" =~ ^(14|15|16|17|18|19)$ ]]; then
+    echo "unsupported PostgreSQL major version in PG_VERSIONS: $pg" >&2
+    exit 2
+  fi
   pg_config="/usr/lib/postgresql/$pg/bin/pg_config"
   if [[ ! -x "$pg_config" ]]; then
     echo "missing pg_config for PostgreSQL $pg at $pg_config" >&2
     exit 2
   fi
+  init_args+=("--pg${pg}=${pg_config}")
 done
 
-cargo pgrx init \
-  --pg14=/usr/lib/postgresql/14/bin/pg_config \
-  --pg15=/usr/lib/postgresql/15/bin/pg_config \
-  --pg16=/usr/lib/postgresql/16/bin/pg_config \
-  --pg17=/usr/lib/postgresql/17/bin/pg_config \
-  --pg18=/usr/lib/postgresql/18/bin/pg_config
+cargo pgrx init "${init_args[@]}"
 
-for pg in "${PG_VERSIONS[@]}"; do
+for pg in "${PG_VERSION_LIST[@]}"; do
   echo "[package] PostgreSQL $pg"
   pg_config="/usr/lib/postgresql/$pg/bin/pg_config"
   cargo pgrx install \

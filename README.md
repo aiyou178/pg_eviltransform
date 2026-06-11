@@ -54,8 +54,9 @@ If you use the regex-based SQL approach, cite:
 ## Requirements
 
 - Rust stable
-- `cargo-pgrx` (`cargo install --locked cargo-pgrx --version 0.17.0`)
-- PostgreSQL + PostGIS (PG 14-18 supported)
+- `cargo-pgrx` from the pinned pgrx PG19 beta branch:
+  `cargo install --locked --git https://github.com/pgcentralfoundation/pgrx --rev 15017e6461222d1882ad0b5ba16eee9b9bccaf9c cargo-pgrx`
+- PostgreSQL + PostGIS (PG 14-18 supported; PG19 beta is experimental)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
 
 Packaging note:
@@ -72,16 +73,21 @@ cargo pgrx init \
   --pg15=/usr/lib/postgresql/15/bin/pg_config \
   --pg16=/usr/lib/postgresql/16/bin/pg_config \
   --pg17=/usr/lib/postgresql/17/bin/pg_config \
-  --pg18=/usr/lib/postgresql/18/bin/pg_config
+  --pg18=/usr/lib/postgresql/18/bin/pg_config \
+  --pg19=/usr/lib/postgresql/19/bin/pg_config
 
 cargo pgrx package --release --features pg18 --no-default-features --pg-config /usr/lib/postgresql/18/bin/pg_config
+# Experimental PG19 beta:
+cargo pgrx package --release --features pg19 --no-default-features --pg-config /usr/lib/postgresql/19/bin/pg_config
 ```
 
 ## Test (native Rust)
 
 ```bash
 cargo test
-cargo pgrx test pg18 --features pg18
+cargo pgrx test pg18 --features "pg18 pg_test"
+# Experimental PG19 beta:
+cargo pgrx test pg19 --features "pg19 pg_test"
 ```
 
 ## Usage
@@ -108,6 +114,8 @@ Use the benchmark script to compare `ST_EvilTransform` and `Regex_EvilTransform`
 ```bash
 # optional env: PGHOST, PGPORT, PGUSER, PGDATABASE, ROWS
 scripts/benchmark_pg18.sh
+# Experimental PG19 beta:
+PG_MAJOR=19 scripts/benchmark_pg18.sh
 ```
 
 It will:
@@ -131,6 +139,13 @@ Latest run (PG18, `ROWS=200000`, report: `benchmark_pg18_report.txt`):
 | `4326 -> 990001` | `92.402 ms` | `2832.821 ms` | `30.7x` |
 | `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` | `45.7x` |
 
+Experimental PG19 beta run (`postgres:19beta1-trixie`, `ROWS=200000`, report: `benchmark_pg19_report.txt`):
+
+| Scenario | `ST_EvilTransform` | `Regex_EvilTransform` | Speedup (`Regex` / `ST`) |
+|---|---:|---:|---:|
+| `4326 -> 990001` | `68.468 ms` | `2800.963 ms` | `40.9x` |
+| `990002 -> 3857 (via 4326)` | `188.930 ms` | `7871.404 ms` | `41.7x` |
+
 ## Release Debian (Trixie, PG14-18)
 
 ```bash
@@ -146,6 +161,12 @@ This builds `.deb` artifacts under `dist/`:
 - `postgresql-18-pg-eviltransform_<version>_trixie_<arch>.deb`
 
 GitHub Release CI publishes both `amd64` and `arm64` package artifacts (`.deb` + `.rpm`).
+
+Experimental PG19 beta packages are opt-in and are not published by the stable tag workflow:
+
+```bash
+PG_VERSIONS="19" scripts/release_debian_trixie.sh
+```
 
 ## License
 

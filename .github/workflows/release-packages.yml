@@ -28,9 +28,34 @@ jobs:
           echo "Resolved version: ${VERSION}"
 
       - name: Build release image
-        run: docker build -f docker/Dockerfile.release-trixie -t pg-eviltransform-release:ci .
+        run: |
+          build_args=()
+          if [[ -n "${DEBIAN_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "DEBIAN_MIRROR=$DEBIAN_MIRROR")
+          fi
+          if [[ -n "${DEBIAN_SECURITY_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "DEBIAN_SECURITY_MIRROR=$DEBIAN_SECURITY_MIRROR")
+          fi
+          if [[ -n "${PGDG_MIRROR:-}" ]]; then
+            build_args+=(--build-arg "PGDG_MIRROR=$PGDG_MIRROR")
+          fi
+          if [[ -n "${RUSTUP_DIST_SERVER:-}" ]]; then
+            build_args+=(--build-arg "RUSTUP_DIST_SERVER=$RUSTUP_DIST_SERVER")
+          fi
+          if [[ -n "${RUSTUP_UPDATE_ROOT:-}" ]]; then
+            build_args+=(--build-arg "RUSTUP_UPDATE_ROOT=$RUSTUP_UPDATE_ROOT")
+          fi
+          if [[ -n "${CARGO_REGISTRIES_CRATES_IO_INDEX:-}" ]]; then
+            build_args+=(--build-arg "CARGO_REGISTRIES_CRATES_IO_INDEX=$CARGO_REGISTRIES_CRATES_IO_INDEX")
+          fi
 
-      - name: Build DEB packages (PG14-18)
+          docker build \
+            "${build_args[@]}" \
+            -f docker/Dockerfile.release-trixie \
+            -t pg-eviltransform-release:ci \
+            .
+
+      - name: Build DEB packages (PG14-18 stable)
         run: |
           mkdir -p dist
           docker run --rm \
