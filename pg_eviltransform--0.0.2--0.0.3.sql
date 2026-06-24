@@ -1,0 +1,2 @@
+-- No SQL object changes are required for 0.0.3.
+-- This migration allows existing 0.0.2 installations to update extension metadata.

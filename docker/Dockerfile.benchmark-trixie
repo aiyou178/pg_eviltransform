@@ -5,7 +5,7 @@ FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PG_MAJOR=18
-ARG PGRX_GIT_REV=15017e6461222d1882ad0b5ba16eee9b9bccaf9c
+ARG CARGO_PGRX_VERSION=0.19.1
 ARG DEBIAN_MIRROR=
 ARG DEBIAN_SECURITY_MIRROR=
 ARG PGDG_MIRROR=
@@ -61,9 +61,21 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
   if [ -n "$RUSTUP_DIST_SERVER" ]; then export RUSTUP_DIST_SERVER; fi; \
   if [ -n "$RUSTUP_UPDATE_ROOT" ]; then export RUSTUP_UPDATE_ROOT; fi; \
   if [ -n "$CARGO_REGISTRIES_CRATES_IO_INDEX" ]; then export CARGO_REGISTRIES_CRATES_IO_INDEX; fi; \
-  curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal; \
+  rustup_arch="$(uname -m)"; \
+  case "$rustup_arch" in \
+    x86_64) rustup_triple="x86_64-unknown-linux-gnu" ;; \
+    aarch64|arm64) rustup_triple="aarch64-unknown-linux-gnu" ;; \
+    *) echo "unsupported rustup architecture: $rustup_arch" >&2; exit 1 ;; \
+  esac; \
+  if [ -n "$RUSTUP_UPDATE_ROOT" ]; then \
+    curl -sSfL "$RUSTUP_UPDATE_ROOT/dist/$rustup_triple/rustup-init" -o /tmp/rustup-init; \
+    chmod +x /tmp/rustup-init; \
+    /tmp/rustup-init -y --profile minimal; \
+  else \
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal; \
+  fi; \
   rustup default stable; \
-  cargo install --locked --git https://github.com/pgcentralfoundation/pgrx --rev "$PGRX_GIT_REV" cargo-pgrx
+  cargo install --locked cargo-pgrx --version "$CARGO_PGRX_VERSION"
 
 WORKDIR /work
 COPY . /work

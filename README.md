@@ -53,9 +53,9 @@ If you use the regex-based SQL approach, cite:
 
 ## Requirements
 
-- Rust stable
-- `cargo-pgrx` from the pinned pgrx PG19 beta branch:
-  `cargo install --locked --git https://github.com/pgcentralfoundation/pgrx --rev 15017e6461222d1882ad0b5ba16eee9b9bccaf9c cargo-pgrx`
+- Rust stable 1.96+
+- `cargo-pgrx` 0.19.1:
+  `cargo install --locked cargo-pgrx --version 0.19.1`
 - PostgreSQL + PostGIS (PG 14-19 packages; PG19 beta is experimental until PostgreSQL 19 GA)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
 
@@ -143,8 +143,8 @@ Experimental PG19 beta run (`postgres:19beta1-trixie`, `ROWS=200000`, report: `b
 
 | Scenario | `ST_EvilTransform` | `Regex_EvilTransform` | Speedup (`Regex` / `ST`) |
 |---|---:|---:|---:|
-| `4326 -> 990001` | `68.468 ms` | `2800.963 ms` | `40.9x` |
-| `990002 -> 3857 (via 4326)` | `188.930 ms` | `7871.404 ms` | `41.7x` |
+| `4326 -> 990001` | `100.307 ms` | `2874.719 ms` | `28.7x` |
+| `990002 -> 3857 (via 4326)` | `182.430 ms` | `8230.002 ms` | `45.1x` |
 
 ## Release Debian (Trixie, PG14-19)
 

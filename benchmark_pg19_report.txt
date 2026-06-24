@@ -2,16 +2,16 @@ PG19 beta benchmark report (ROWS=200000)
 
 Environment:
 - Docker base image: postgres:19beta1-trixie
-- pgrx: git revision 15017e6461222d1882ad0b5ba16eee9b9bccaf9c
+- pgrx: 0.19.1
 
 Compared functions:
 - ST_EvilTransform
 - Regex_EvilTransform
 
 Scenario: 4326 -> 990001
-- ST_EvilTransform: 68.468 ms
-- Regex_EvilTransform: 2800.963 ms
+- ST_EvilTransform: 100.307 ms
+- Regex_EvilTransform: 2874.719 ms
 
 Scenario: 990002 -> 3857 (via 4326)
-- ST_EvilTransform: 188.930 ms
-- Regex_EvilTransform: 7871.404 ms
+- ST_EvilTransform: 182.430 ms
+- Regex_EvilTransform: 8230.002 ms

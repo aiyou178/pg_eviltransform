@@ -73,6 +73,10 @@ for pg in "${PG_VERSION_LIST[@]}"; do
   if [[ ${#upgrade_files[@]} -gt 0 ]]; then
     cp "${upgrade_files[@]}" "$deb_root/usr/share/postgresql/$pg/extension/"
   fi
+  upgrade_files=("$ROOT_DIR"/pg_eviltransform--*--*.sql)
+  if [[ ${#upgrade_files[@]} -gt 0 ]]; then
+    cp "${upgrade_files[@]}" "$deb_root/usr/share/postgresql/$pg/extension/"
+  fi
 
   cat > "$deb_root/DEBIAN/control" <<CONTROL
 Package: postgresql-${pg}-pg-eviltransform

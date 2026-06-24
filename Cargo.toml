@@ -3,7 +3,8 @@ description = "transformation of bd09, gcj02 and other coordinate supported by p
 edition = "2024"
 license = "MIT"
 name = "pg_eviltransform"
-version = "0.0.2"
+rust-version = "1.96"
+version = "0.0.3"
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -24,8 +25,8 @@ pg19 = ["extension", "pgrx/pg19", "pgrx-tests?/pg19"]
 pg_test = ["extension", "dep:pgrx-tests"]
 
 [dependencies]
-pgrx = {git = "https://github.com/pgcentralfoundation/pgrx", rev = "15017e6461222d1882ad0b5ba16eee9b9bccaf9c", optional = true}
-pgrx-tests = {git = "https://github.com/pgcentralfoundation/pgrx", rev = "15017e6461222d1882ad0b5ba16eee9b9bccaf9c", optional = true}
+pgrx = {version = "=0.19.1", optional = true}
+pgrx-tests = {version = "=0.19.1", optional = true}
 
 [build-dependencies]
 cc = "1.2"
