@@ -1,5 +1,15 @@
 pub mod coord;
 pub mod ewkb;
+pub mod jenks;
+
+#[cfg(all(test, feature = "extension"))]
+pub mod pg_test {
+    pub fn setup(_options: Vec<&str>) {}
+
+    pub fn postgresql_conf_options() -> Vec<&'static str> {
+        vec![]
+    }
+}
 
 #[cfg(feature = "extension")]
 pgrx::pg_module_magic!();
@@ -14,11 +24,13 @@ mod extension {
     use std::ptr;
     use std::sync::OnceLock;
 
+    use pgrx::Internal;
     use pgrx::datum::AnyElement;
     use pgrx::direct_function_call;
     use pgrx::prelude::*;
 
     use crate::coord::TransformKind;
+    use crate::jenks::{self, JenksCounts};
 
     const SRID_WGS84: i32 = 4326;
     const SRID_GCJ02: i32 = 990001;
@@ -222,6 +234,297 @@ mod extension {
             .unwrap_or_else(|| error!("failed to build transformed geometry datum"))
     }
 
+    fn values_to_jenks<I>(values: I, breaks: i32, invert: bool) -> Option<Vec<f64>>
+    where
+        I: IntoIterator<Item = f64>,
+    {
+        match jenks::breaks_from_values(values, breaks, invert) {
+            Ok(result) => result,
+            Err(err) => error!("{err}"),
+        }
+    }
+
+    fn anynumeric_to_f64(value: AnyNumeric) -> f64 {
+        match f64::try_from(value) {
+            Ok(value) if value.is_finite() => value,
+            Ok(value) => error!("Jenks input must be finite f64, got {value}"),
+            Err(err) => error!("numeric value cannot be converted to finite f64: {err}"),
+        }
+    }
+
+    fn collect_array_values<T, F>(values: Vec<Option<T>>, convert: F) -> Vec<f64>
+    where
+        F: Fn(T) -> f64,
+    {
+        values
+            .into_iter()
+            .filter_map(|value| value.map(&convert))
+            .collect()
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_float8_array(values: Vec<Option<f64>>, breaks: i32) -> Option<Vec<f64>> {
+        st_jenksbins_float8_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_float8_array_invert(
+        values: Vec<Option<f64>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(collect_array_values(values, |value| value), breaks, invert)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_float4_array(values: Vec<Option<f32>>, breaks: i32) -> Option<Vec<f64>> {
+        st_jenksbins_float4_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_float4_array_invert(
+        values: Vec<Option<f32>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(
+            collect_array_values(values, |value| f64::from(value)),
+            breaks,
+            invert,
+        )
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int8_array(values: Vec<Option<i64>>, breaks: i32) -> Option<Vec<f64>> {
+        st_jenksbins_int8_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int8_array_invert(
+        values: Vec<Option<i64>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(
+            collect_array_values(values, |value| value as f64),
+            breaks,
+            invert,
+        )
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int4_array(values: Vec<Option<i32>>, breaks: i32) -> Option<Vec<f64>> {
+        st_jenksbins_int4_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int4_array_invert(
+        values: Vec<Option<i32>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(
+            collect_array_values(values, |value| f64::from(value)),
+            breaks,
+            invert,
+        )
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int2_array(values: Vec<Option<i16>>, breaks: i32) -> Option<Vec<f64>> {
+        st_jenksbins_int2_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_int2_array_invert(
+        values: Vec<Option<i16>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(
+            collect_array_values(values, |value| f64::from(value)),
+            breaks,
+            invert,
+        )
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_numeric_array(
+        values: Vec<Option<AnyNumeric>>,
+        breaks: i32,
+    ) -> Option<Vec<f64>> {
+        st_jenksbins_numeric_array_invert(values, breaks, false)
+    }
+
+    #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
+    fn st_jenksbins_numeric_array_invert(
+        values: Vec<Option<AnyNumeric>>,
+        breaks: i32,
+        invert: bool,
+    ) -> Option<Vec<f64>> {
+        values_to_jenks(
+            collect_array_values(values, anynumeric_to_f64),
+            breaks,
+            invert,
+        )
+    }
+
+    #[derive(Clone, Default)]
+    struct JenksBinsState {
+        counts: JenksCounts,
+        breaks: i32,
+        invert: bool,
+        initialized: bool,
+    }
+
+    impl JenksBinsState {
+        fn add_value(&mut self, value: Option<f64>, breaks: i32, invert: bool) {
+            if breaks < 1 {
+                error!("breaks must be greater than or equal to 1");
+            }
+            if self.initialized {
+                if self.breaks != breaks || self.invert != invert {
+                    error!("ST_JenksBins aggregate breaks and invert arguments must be constant");
+                }
+            } else {
+                self.breaks = breaks;
+                self.invert = invert;
+                self.initialized = true;
+            }
+            if let Some(value) = value {
+                if let Err(err) = self.counts.push(value) {
+                    error!("{err}");
+                }
+            }
+        }
+
+        fn finalize(self) -> Option<Vec<f64>> {
+            if !self.initialized {
+                return None;
+            }
+            match jenks::breaks_from_counts(&self.counts, self.breaks, self.invert) {
+                Ok(result) => result,
+                Err(err) => error!("{err}"),
+            }
+        }
+    }
+
+    #[derive(AggregateName)]
+    #[aggregate_name = "st_jenksbins"]
+    struct JbF8;
+
+    #[pg_aggregate]
+    impl Aggregate<JbF8> for JbF8 {
+        type Args = (Option<f64>, i32);
+        type State = Internal;
+        type Finalize = Option<Vec<f64>>;
+
+        fn state(
+            mut current: Self::State,
+            (value, breaks): Self::Args,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::State {
+            let state = unsafe { current.get_or_insert_default::<JenksBinsState>() };
+            state.add_value(value, breaks, false);
+            current
+        }
+
+        fn finalize(
+            current: Self::State,
+            _direct_args: Self::OrderedSetArgs,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::Finalize {
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+        }
+    }
+
+    #[derive(AggregateName)]
+    #[aggregate_name = "st_jenksbins"]
+    struct JbF8Inv;
+
+    #[pg_aggregate]
+    impl Aggregate<JbF8Inv> for JbF8Inv {
+        type Args = (Option<f64>, i32, bool);
+        type State = Internal;
+        type Finalize = Option<Vec<f64>>;
+
+        fn state(
+            mut current: Self::State,
+            (value, breaks, invert): Self::Args,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::State {
+            let state = unsafe { current.get_or_insert_default::<JenksBinsState>() };
+            state.add_value(value, breaks, invert);
+            current
+        }
+
+        fn finalize(
+            current: Self::State,
+            _direct_args: Self::OrderedSetArgs,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::Finalize {
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+        }
+    }
+
+    #[derive(AggregateName)]
+    #[aggregate_name = "st_jenksbins"]
+    struct JbNum;
+
+    #[pg_aggregate]
+    impl Aggregate<JbNum> for JbNum {
+        type Args = (Option<AnyNumeric>, i32);
+        type State = Internal;
+        type Finalize = Option<Vec<f64>>;
+
+        fn state(
+            mut current: Self::State,
+            (value, breaks): Self::Args,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::State {
+            let state = unsafe { current.get_or_insert_default::<JenksBinsState>() };
+            state.add_value(value.map(anynumeric_to_f64), breaks, false);
+            current
+        }
+
+        fn finalize(
+            current: Self::State,
+            _direct_args: Self::OrderedSetArgs,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::Finalize {
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+        }
+    }
+
+    #[derive(AggregateName)]
+    #[aggregate_name = "st_jenksbins"]
+    struct JbNumInv;
+
+    #[pg_aggregate]
+    impl Aggregate<JbNumInv> for JbNumInv {
+        type Args = (Option<AnyNumeric>, i32, bool);
+        type State = Internal;
+        type Finalize = Option<Vec<f64>>;
+
+        fn state(
+            mut current: Self::State,
+            (value, breaks, invert): Self::Args,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::State {
+            let state = unsafe { current.get_or_insert_default::<JenksBinsState>() };
+            state.add_value(value.map(anynumeric_to_f64), breaks, invert);
+            current
+        }
+
+        fn finalize(
+            current: Self::State,
+            _direct_args: Self::OrderedSetArgs,
+            _fcinfo: pg_sys::FunctionCallInfo,
+        ) -> Self::Finalize {
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+        }
+    }
+
     extension_sql!(
         r#"
         CREATE FUNCTION eviltransform_internal.__parse_custom_srid(spec text)
@@ -394,14 +697,65 @@ mod extension {
 
             assert!(got);
         }
-    }
 
-    #[cfg(test)]
-    pub mod pg_test {
-        pub fn setup(_options: Vec<&str>) {}
+        #[pg_test]
+        fn test_jenksbins_array_overloads() {
+            for sql in [
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::numeric[], 2) = ARRAY[2, 11]::double precision[]",
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::double precision[], 2) = ARRAY[2, 11]::double precision[]",
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::real[], 2) = ARRAY[2, 11]::double precision[]",
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::smallint[], 2) = ARRAY[2, 11]::double precision[]",
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::integer[], 2) = ARRAY[2, 11]::double precision[]",
+                "SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::bigint[], 2) = ARRAY[2, 11]::double precision[]",
+            ] {
+                let got = Spi::get_one::<bool>(sql)
+                    .expect("SPI failed")
+                    .expect("no row returned");
+                assert!(got, "{sql}");
+            }
+        }
 
-        pub fn postgres_conf_options() -> Vec<&'static str> {
-            vec![]
+        #[pg_test]
+        fn test_jenksbins_aggregate_matches_array() {
+            let got = Spi::get_one::<bool>(
+                "WITH data(value) AS (
+                   SELECT unnest(ARRAY[1, 1, 2, 2, 10, 11, NULL]::double precision[])
+                 )
+                 SELECT ST_JenksBins(value, 2) = ST_JenksBins(array_agg(value), 2)
+                 FROM data",
+            )
+            .expect("SPI failed")
+            .expect("no row returned");
+            assert!(got);
+        }
+
+        #[pg_test]
+        fn test_jenksbins_numeric_aggregate_and_invert() {
+            let got = Spi::get_one::<bool>(
+                "WITH data(value) AS (
+                   SELECT unnest(ARRAY[1, 2, 3, 10, 11, 12]::numeric[])
+                 )
+                 SELECT ST_JenksBins(value, 2, true) = ARRAY[1, 10]::double precision[]
+                 FROM data",
+            )
+            .expect("SPI failed")
+            .expect("no row returned");
+            assert!(got);
+        }
+
+        #[pg_test]
+        fn test_jenksbins_duplicate_heavy_large_aggregate() {
+            let got = Spi::get_one::<bool>(
+                "WITH data AS (
+                   SELECT (g % 100)::double precision AS value
+                   FROM generate_series(1, 10000) AS g
+                 )
+                 SELECT cardinality(ST_JenksBins(value, 5)) = 5
+                 FROM data",
+            )
+            .expect("SPI failed")
+            .expect("no row returned");
+            assert!(got);
         }
     }
 }

@@ -107,6 +107,48 @@ SELECT ST_EvilTransform(ST_SetSRID('POINT(120.011070620552 30.0038830555128)'::g
 SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 'GCJ02');
 ```
 
+## Jenks 自然断点
+
+`ST_JenksBins` 计算精确 Jenks natural breaks，并返回 `double precision[]` 分箱边界。
+
+支持的数组输入：
+
+- `numeric[]`
+- `double precision[]`
+- `real[]`
+- `bigint[]`
+- `integer[]`
+- `smallint[]`
+
+支持的聚合输入：
+
+- `numeric`
+- `double precision`
+
+整数和 `real` 聚合输入可显式转换为 `double precision` 或 `numeric`。`numeric` 可以作为输入，但内部会归一化为有限 `f64` 参与计算，因此返回边界是浮点值。
+
+示例：
+
+```sql
+-- 数组形式。NULL 元素会被忽略。
+SELECT ST_JenksBins(ARRAY[1, 2, NULL, 10, 11]::numeric[], 2);
+
+-- 流式聚合形式。大表优先使用这种方式。
+SELECT ST_JenksBins(value, 7)
+FROM big_table;
+
+-- 返回下边界，而不是默认的上边界。
+SELECT ST_JenksBins(value, 7, true)
+FROM big_table;
+```
+
+行为：
+
+- 忽略 `NULL` 输入。
+- `breaks < 1`、`NaN`、无穷值，以及不能转换为有限 `f64` 的 `numeric` 会报错。
+- 没有有效输入行时返回 `NULL`。
+- 如果不同值数量小于等于 `breaks`，返回排序后的唯一值。
+
 ## 基准测试（PG18）
 
 使用脚本对比 `ST_EvilTransform` 与 `Regex_EvilTransform`：
@@ -145,6 +187,27 @@ ROWS=500000 PGDATABASE=testdb scripts/benchmark_pg18.sh /tmp/bench_pg18.txt
 |---|---:|---:|---:|
 | `4326 -> 990001` | `100.307 ms` | `2874.719 ms` | `28.7x` |
 | `990002 -> 3857 (via 4326)` | `182.430 ms` | `8230.002 ms` | `45.1x` |
+
+## Jenks 基准测试
+
+使用 `scripts/benchmark_jenksbins.sh` 对比 CartoDB SQL 基线、Rust 数组形式和 Rust 流式聚合形式：
+
+```bash
+# 可选环境变量：ROWS, DISTINCT_VALUES, BREAKS, WORK_MEM, PGHOST, PGPORT, PGUSER, PGDATABASE
+scripts/benchmark_jenksbins.sh
+```
+
+基准测试使用的 CartoDB 基线 SQL 已随仓库放在 `scripts/CDB_JenksBins.sql`，其中包含上游归属和许可证说明。
+
+PG19 beta Docker 结果（`ROWS=100000`，`DISTINCT_VALUES=1000`，`BREAKS=7`，`WORK_MEM=8MB`）：
+
+| 场景 | 执行时间 |
+|---|---:|
+| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `95.785 ms` |
+| `ST_JenksBins(array_agg(value), breaks)` | `11.381 ms` |
+| `ST_JenksBins(value, breaks)` 流式聚合 | `8.210 ms` |
+
+流式聚合不需要构造 `array_agg` 输入，并在聚合过程中维护内部的不同值计数表。
 
 ## Debian Trixie 发版（PG14-19）
 
