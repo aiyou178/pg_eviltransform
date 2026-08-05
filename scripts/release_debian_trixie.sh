@@ -10,7 +10,7 @@ PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18 19}"
 BASE_IMAGE_SET="${BASE_IMAGE+x}"
 
 if [[ -z "$BASE_IMAGE_SET" ]]; then
-  BASE_IMAGE="postgres:19beta1-trixie"
+  BASE_IMAGE="postgres:19beta2-trixie"
 fi
 
 mkdir -p "$OUT_DIR"

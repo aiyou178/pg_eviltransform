@@ -54,8 +54,8 @@ If you use the regex-based SQL approach, cite:
 ## Requirements
 
 - Rust stable 1.96+
-- `cargo-pgrx` 0.19.1:
-  `cargo install --locked cargo-pgrx --version 0.19.1`
+- `cargo-pgrx` 0.19.2:
+  `cargo install --locked cargo-pgrx --version 0.19.2`
 - PostgreSQL + PostGIS (PG 14-19 packages; PG19 beta is experimental until PostgreSQL 19 GA)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
 
@@ -181,12 +181,12 @@ Latest run (PG18, `ROWS=200000`, report: `benchmark_pg18_report.txt`):
 | `4326 -> 990001` | `92.402 ms` | `2832.821 ms` | `30.7x` |
 | `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` | `45.7x` |
 
-Experimental PG19 beta run (`postgres:19beta1-trixie`, `ROWS=200000`, report: `benchmark_pg19_report.txt`):
+Experimental PG19 Beta 2 run (`postgres:19beta2-trixie`, `ROWS=200000`, report: `benchmark_pg19_report.txt`):
 
 | Scenario | `ST_EvilTransform` | `Regex_EvilTransform` | Speedup (`Regex` / `ST`) |
 |---|---:|---:|---:|
-| `4326 -> 990001` | `100.307 ms` | `2874.719 ms` | `28.7x` |
-| `990002 -> 3857 (via 4326)` | `182.430 ms` | `8230.002 ms` | `45.1x` |
+| `4326 -> 990001` | `70.369 ms` | `2795.668 ms` | `39.7x` |
+| `990002 -> 3857 (via 4326)` | `186.143 ms` | `7679.173 ms` | `41.3x` |
 
 ## Jenks Benchmark
 
@@ -199,13 +199,13 @@ scripts/benchmark_jenksbins.sh
 
 The CartoDB baseline SQL used by the benchmark is vendored at `scripts/CDB_JenksBins.sql` with upstream attribution and license notes.
 
-PG19 beta Docker run (`ROWS=100000`, `DISTINCT_VALUES=1000`, `BREAKS=7`, `WORK_MEM=8MB`):
+PG19 Beta 2 Docker run (`postgres:19beta2-trixie`, `ROWS=100000`, `DISTINCT_VALUES=1000`, `BREAKS=7`, `WORK_MEM=8MB`):
 
 | Scenario | Execution time |
 |---|---:|
-| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `95.785 ms` |
-| `ST_JenksBins(array_agg(value), breaks)` | `11.381 ms` |
-| `ST_JenksBins(value, breaks)` streaming aggregate | `8.210 ms` |
+| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `81.368 ms` |
+| `ST_JenksBins(array_agg(value), breaks)` | `10.567 ms` |
+| `ST_JenksBins(value, breaks)` streaming aggregate | `9.154 ms` |
 
 The streaming aggregate avoids materializing an `array_agg` input and keeps an internal distinct-value count map during aggregation.
 

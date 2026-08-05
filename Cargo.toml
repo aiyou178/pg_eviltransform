@@ -4,20 +4,10 @@ edition = "2024"
 license = "MIT"
 name = "pg_eviltransform"
 rust-version = "1.96"
-version = "0.0.4"
+version = "0.0.5"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-
-[[bin]]
-name = "pgrx_embed_pg_eviltransform"
-path = "src/bin/pgrx_embed_pg_eviltransform.rs"
-test = false
-
-[[bin]]
-name = "pgrx_embed"
-path = "src/bin/pgrx_embed.rs"
-test = false
 
 [features]
 default = []
@@ -32,8 +22,8 @@ pg_test = ["extension", "dep:pgrx-tests"]
 
 [dependencies]
 natural-breaks = { version = "0.2.0", features = ["low-memory"] }
-pgrx = {version = "=0.19.1", optional = true}
-pgrx-tests = {version = "=0.19.1", optional = true}
+pgrx = { version = "=0.19.2", optional = true }
+pgrx-tests = { version = "=0.19.2", optional = true }
 
 [build-dependencies]
 cc = "1.2"
