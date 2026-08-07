@@ -20,7 +20,7 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Run Rust unit tests
         run: cargo test --lib
@@ -53,7 +53,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build benchmark image
         run: |
@@ -125,7 +125,7 @@ jobs:
           '
 
       - name: Upload benchmark report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-${{ matrix.pg_label }}-report-${{ matrix.arch }}
           path: benchmark_pg${{ matrix.pg_major }}_report.txt
