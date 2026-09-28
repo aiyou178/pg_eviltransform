@@ -54,10 +54,14 @@ Regex SQL 方案参考专利：
 ## 依赖要求
 
 - Rust stable 1.96+
-- `cargo-pgrx` 0.19.2：
-  `cargo install --locked cargo-pgrx --version 0.19.2`
-- PostgreSQL + PostGIS（发布 PG 14-19 包；PG19 beta 在 PostgreSQL 19 GA 前仍为实验支持）
+- `cargo-pgrx` 0.19.3：
+  `cargo install --locked cargo-pgrx --version 0.19.3`
+- PostgreSQL + PostGIS（发布 PG 14-19 包；PG19 Beta 4 在 PostgreSQL 19 GA 前仍为实验支持）
 - `librttopo-dev`（用于原生 GSERIALIZED 快速路径）
+
+测试 PG19 Beta 4 时，应使用针对 Beta 4 头文件构建的 PostGIS。Trixie PG19
+基准镜像从源码构建 PostGIS 3.7.0rc2；当前 PGDG 的 PostGIS 3.6.4 包在 ARM64
+环境中执行普通 `ST_Transform` 时发生段错误。
 
 打包说明：
 
@@ -181,12 +185,12 @@ ROWS=500000 PGDATABASE=testdb scripts/benchmark_pg18.sh /tmp/bench_pg18.txt
 | `4326 -> 990001` | `92.402 ms` | `2832.821 ms` | `30.7x` |
 | `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` | `45.7x` |
 
-实验性 PG19 Beta 2 结果（`postgres:19beta2-trixie`，`ROWS=200000`，报告文件：`benchmark_pg19_report.txt`）：
+实验性 PG19 Beta 4 结果（`postgres:19beta4-trixie`、PostGIS 3.7.0rc2、`ROWS=200000`，报告文件：`benchmark_pg19_report.txt`）：
 
 | 场景 | `ST_EvilTransform` | `Regex_EvilTransform` | 速度比（`Regex` / `ST`） |
 |---|---:|---:|---:|
-| `4326 -> 990001` | `70.369 ms` | `2795.668 ms` | `39.7x` |
-| `990002 -> 3857 (via 4326)` | `186.143 ms` | `7679.173 ms` | `41.3x` |
+| `4326 -> 990001` | `92.822 ms` | `3057.853 ms` | `32.9x` |
+| `990002 -> 3857 (via 4326)` | `200.395 ms` | `7916.158 ms` | `39.5x` |
 
 ## Jenks 基准测试
 
@@ -199,13 +203,13 @@ scripts/benchmark_jenksbins.sh
 
 基准测试使用的 CartoDB 基线 SQL 已随仓库放在 `scripts/CDB_JenksBins.sql`，其中包含上游归属和许可证说明。
 
-PG19 Beta 2 Docker 结果（`postgres:19beta2-trixie`，`ROWS=100000`，`DISTINCT_VALUES=1000`，`BREAKS=7`，`WORK_MEM=8MB`）：
+PG19 Beta 4 Docker 结果（`postgres:19beta4-trixie`、PostGIS 3.7.0rc2、`ROWS=100000`、`DISTINCT_VALUES=1000`、`BREAKS=7`、`WORK_MEM=8MB`）：
 
 | 场景 | 执行时间 |
 |---|---:|
-| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `81.368 ms` |
-| `ST_JenksBins(array_agg(value), breaks)` | `10.567 ms` |
-| `ST_JenksBins(value, breaks)` 流式聚合 | `9.154 ms` |
+| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `89.695 ms` |
+| `ST_JenksBins(array_agg(value), breaks)` | `11.341 ms` |
+| `ST_JenksBins(value, breaks)` 流式聚合 | `9.881 ms` |
 
 流式聚合不需要构造 `array_agg` 输入，并在聚合过程中维护内部的不同值计数表。
 

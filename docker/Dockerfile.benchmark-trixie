@@ -5,7 +5,9 @@ FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PG_MAJOR=18
-ARG CARGO_PGRX_VERSION=0.19.2
+ARG CARGO_PGRX_VERSION=0.19.3
+ARG POSTGIS_SOURCE_VERSION=3.7.0rc2
+ARG POSTGIS_SOURCE_SHA256=67ef9e85fbf9ef8a99807c9ccd80bef839058b699d16764083d937b13e1259b3
 ARG DEBIAN_MIRROR=
 ARG DEBIAN_SECURITY_MIRROR=
 ARG PGDG_MIRROR=
@@ -46,13 +48,42 @@ RUN set -eux; \
     clang \
     llvm-dev \
     libc6-dev \
+    libicu-dev \
     libgeos-dev \
     librttopo-dev \
-    postgresql-${PG_MAJOR}-postgis-3 \
-    postgresql-${PG_MAJOR}-postgis-3-scripts \
     postgresql-server-dev-${PG_MAJOR}; \
+  if [ "$PG_MAJOR" = "19" ]; then \
+    apt-get install -y --no-install-recommends \
+      build-essential libgmp-dev libjson-c-dev libproj-dev libxml2-dev perl; \
+  else \
+    apt-get install -y --no-install-recommends \
+      postgresql-${PG_MAJOR}-postgis-3 \
+      postgresql-${PG_MAJOR}-postgis-3-scripts; \
+  fi; \
   update-ca-certificates; \
   rm -rf /var/lib/apt/lists/* /tmp/*
+
+# Build PostGIS against the beta headers: the available PG19 3.6.4 package
+# segfaults in ST_Transform on PostgreSQL 19 Beta 4.
+ARG POSTGIS_SOURCE_URL=https://download.osgeo.org/postgis/source/postgis-3.7.0rc2.tar.gz
+RUN if [ "$PG_MAJOR" = "19" ]; then \
+    set -eux; \
+    curl -fsSL --retry 3 --retry-all-errors --retry-delay 5 \
+      --connect-timeout 20 --max-time 300 "$POSTGIS_SOURCE_URL" \
+      -o /tmp/postgis.tar.gz; \
+    echo "${POSTGIS_SOURCE_SHA256}  /tmp/postgis.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/postgis.tar.gz -C /tmp; \
+    cd "/tmp/postgis-${POSTGIS_SOURCE_VERSION}"; \
+    ./configure --with-pgconfig="/usr/lib/postgresql/${PG_MAJOR}/bin/pg_config" \
+      --without-raster --without-topology --without-protobuf; \
+    make -C liblwgeom; \
+    make -C libpgcommon; \
+    make -C postgis; \
+    make -C postgis install; \
+    make -C extensions postgis_extension_helper.sql; \
+    make -C extensions/postgis install; \
+    rm -rf "/tmp/postgis-${POSTGIS_SOURCE_VERSION}" /tmp/postgis.tar.gz; \
+  fi
 
 RUN --mount=type=cache,target=/root/.cargo/registry \
   --mount=type=cache,target=/root/.cargo/git \

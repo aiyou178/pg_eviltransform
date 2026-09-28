@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 # Release build image for pg_eviltransform packages on Debian trixie (PG14-19).
-ARG BASE_IMAGE=postgres:19beta2-trixie
+ARG BASE_IMAGE=postgres:19beta4-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG CARGO_PGRX_VERSION=0.19.2
+ARG CARGO_PGRX_VERSION=0.19.3
 ARG DEBIAN_MIRROR=
 ARG DEBIAN_SECURITY_MIRROR=
 ARG PGDG_MIRROR=
@@ -64,6 +64,7 @@ RUN set -eux; \
     clang \
     llvm-dev \
     libc6-dev \
+    libicu-dev \
     librttopo-dev \
     libgeos-dev \
     dpkg-dev \

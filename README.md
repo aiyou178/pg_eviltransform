@@ -54,10 +54,14 @@ If you use the regex-based SQL approach, cite:
 ## Requirements
 
 - Rust stable 1.96+
-- `cargo-pgrx` 0.19.2:
-  `cargo install --locked cargo-pgrx --version 0.19.2`
-- PostgreSQL + PostGIS (PG 14-19 packages; PG19 beta is experimental until PostgreSQL 19 GA)
+- `cargo-pgrx` 0.19.3:
+  `cargo install --locked cargo-pgrx --version 0.19.3`
+- PostgreSQL + PostGIS (PG 14-19 packages; PG19 Beta 4 is experimental until PostgreSQL 19 GA)
 - `librttopo-dev` (for the native GSERIALIZED fast path)
+
+For PG19 Beta 4 testing, use PostGIS built against Beta 4 headers. The Trixie
+PG19 benchmark image builds PostGIS 3.7.0rc2 from source; the available PGDG
+PostGIS 3.6.4 package segfaulted in a plain `ST_Transform` test on ARM64.
 
 Packaging note:
 
@@ -181,12 +185,12 @@ Latest run (PG18, `ROWS=200000`, report: `benchmark_pg18_report.txt`):
 | `4326 -> 990001` | `92.402 ms` | `2832.821 ms` | `30.7x` |
 | `990002 -> 3857 (via 4326)` | `183.856 ms` | `8393.272 ms` | `45.7x` |
 
-Experimental PG19 Beta 2 run (`postgres:19beta2-trixie`, `ROWS=200000`, report: `benchmark_pg19_report.txt`):
+Experimental PG19 Beta 4 run (`postgres:19beta4-trixie`, PostGIS 3.7.0rc2, `ROWS=200000`, report: `benchmark_pg19_report.txt`):
 
 | Scenario | `ST_EvilTransform` | `Regex_EvilTransform` | Speedup (`Regex` / `ST`) |
 |---|---:|---:|---:|
-| `4326 -> 990001` | `70.369 ms` | `2795.668 ms` | `39.7x` |
-| `990002 -> 3857 (via 4326)` | `186.143 ms` | `7679.173 ms` | `41.3x` |
+| `4326 -> 990001` | `92.822 ms` | `3057.853 ms` | `32.9x` |
+| `990002 -> 3857 (via 4326)` | `200.395 ms` | `7916.158 ms` | `39.5x` |
 
 ## Jenks Benchmark
 
@@ -199,13 +203,13 @@ scripts/benchmark_jenksbins.sh
 
 The CartoDB baseline SQL used by the benchmark is vendored at `scripts/CDB_JenksBins.sql` with upstream attribution and license notes.
 
-PG19 Beta 2 Docker run (`postgres:19beta2-trixie`, `ROWS=100000`, `DISTINCT_VALUES=1000`, `BREAKS=7`, `WORK_MEM=8MB`):
+PG19 Beta 4 Docker run (`postgres:19beta4-trixie`, PostGIS 3.7.0rc2, `ROWS=100000`, `DISTINCT_VALUES=1000`, `BREAKS=7`, `WORK_MEM=8MB`):
 
 | Scenario | Execution time |
 |---|---:|
-| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `81.368 ms` |
-| `ST_JenksBins(array_agg(value), breaks)` | `10.567 ms` |
-| `ST_JenksBins(value, breaks)` streaming aggregate | `9.154 ms` |
+| `CDB_JenksBins(array_agg(value::numeric), breaks)` | `89.695 ms` |
+| `ST_JenksBins(array_agg(value), breaks)` | `11.341 ms` |
+| `ST_JenksBins(value, breaks)` streaming aggregate | `9.881 ms` |
 
 The streaming aggregate avoids materializing an `array_agg` input and keeps an internal distinct-value count map during aggregation.
 

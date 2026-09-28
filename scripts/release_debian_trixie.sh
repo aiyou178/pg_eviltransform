@@ -10,7 +10,7 @@ PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18 19}"
 BASE_IMAGE_SET="${BASE_IMAGE+x}"
 
 if [[ -z "$BASE_IMAGE_SET" ]]; then
-  BASE_IMAGE="postgres:19beta2-trixie"
+  BASE_IMAGE="postgres:19beta4-trixie"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -45,7 +45,12 @@ docker build \
   "$ROOT_DIR"
 
 echo "[release] packaging pg_eviltransform version $EXT_VERSION for PostgreSQL $PG_VERSIONS"
+run_args=()
+if [[ -n "${CARGO_REGISTRIES_CRATES_IO_INDEX:-}" ]]; then
+  run_args+=(-e "CARGO_REGISTRIES_CRATES_IO_INDEX=$CARGO_REGISTRIES_CRATES_IO_INDEX")
+fi
 docker run --rm \
+  "${run_args[@]}" \
   -e EXT_VERSION="$EXT_VERSION" \
   -e OUT_DIR="/out" \
   -e PG_VERSIONS="$PG_VERSIONS" \
