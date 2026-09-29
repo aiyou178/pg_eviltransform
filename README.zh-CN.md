@@ -2,7 +2,7 @@
 
 [English README](README.md)
 
-`pg_eviltransform` 是对 PostGIS `ST_Transform` 的扩展，增加了 BD09 / GCJ02 坐标系支持。
+`pg_eviltransform` 是对 PostGIS `ST_Transform` 的扩展，增加了 BD09 / GCJ02 坐标系和地理坐标系 CGCS2000 名称支持。
 
 对外只提供一个函数名，接口与 `ST_Transform` 保持一致：
 
@@ -20,6 +20,11 @@
 
 - `990001`: GCJ02
 - `990002`: BD09
+
+地理坐标系 CGCS2000 使用标准 SRID `EPSG:4490`。所有文本重载接受
+`CGCS2000`、`CGCS-2000`、`4490` 和 `EPSG:4490`；整数重载原本就支持
+`4490`。基准面转换由 PostGIS/PROJ 选择。CGCS2000 高斯-克吕格投影分带
+请通过整数 SRID 重载传入对应分带的明确 EPSG 编号。
 
 ## Regex SQL 对照实现
 
@@ -109,6 +114,11 @@ SELECT ST_EvilTransform(ST_SetSRID('POINT(120.011070620552 30.0038830555128)'::g
 
 -- from_proj / to_proj 重载 + 字面量
 SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 'GCJ02');
+
+-- 地理坐标系 CGCS2000（EPSG:4490），也可与自定义坐标系互转
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'CGCS2000');
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS2000', 'GCJ02');
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'BD09', 'EPSG:4490');
 ```
 
 ## Jenks 自然断点

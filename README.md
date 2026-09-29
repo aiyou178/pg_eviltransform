@@ -2,7 +2,7 @@
 
 [中文文档 (Chinese README)](README.zh-CN.md)
 
-`pg_eviltransform` extends PostGIS `ST_Transform` with BD09/GCJ02 support.
+`pg_eviltransform` extends PostGIS `ST_Transform` with BD09/GCJ02 support and a geographic CGCS2000 name.
 
 It exposes one public function name, following the same overload interface as `ST_Transform`:
 
@@ -20,6 +20,11 @@ Custom SRIDs:
 
 - `990001`: GCJ02
 - `990002`: BD09
+
+Geographic CGCS2000 uses the standard `EPSG:4490` SRID. All text overloads accept
+`CGCS2000`, `CGCS-2000`, `4490`, and `EPSG:4490`; the integer overload accepts
+`4490` already. PostGIS/PROJ selects the datum operation. For a projected
+CGCS2000 Gauss-Kruger zone, pass that zone's explicit integer EPSG SRID instead.
 
 ## Regex SQL Variant
 
@@ -109,6 +114,11 @@ SELECT ST_EvilTransform(ST_SetSRID('POINT(120.011070620552 30.0038830555128)'::g
 
 -- from_proj / to_proj overload with literals
 SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 'GCJ02');
+
+-- Geographic CGCS2000 (EPSG:4490), including conversions with custom CRSs
+SELECT ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 'CGCS2000');
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS2000', 'GCJ02');
+SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'BD09', 'EPSG:4490');
 ```
 
 ## Jenks Natural Breaks

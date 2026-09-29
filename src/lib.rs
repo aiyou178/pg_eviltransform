@@ -541,6 +541,10 @@ mod extension {
           WHEN 'EPSG:990002' THEN 990002
           WHEN 'BD09' THEN 990002
           WHEN 'BD-09' THEN 990002
+          WHEN '4490' THEN 4490
+          WHEN 'EPSG:4490' THEN 4490
+          WHEN 'CGCS2000' THEN 4490
+          WHEN 'CGCS-2000' THEN 4490
           ELSE NULL
         END;
         $$;
@@ -641,6 +645,48 @@ mod extension {
             .expect("no row returned");
 
             assert!(got);
+        }
+
+        #[pg_test]
+        fn test_cgcs2000_integer_delegates_to_postgis() {
+            for sql in [
+                "SELECT ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 4490)) = ST_AsEWKB(ST_Transform(ST_SetSRID('POINT(120 30)'::geometry, 4326), 4490))",
+                "SELECT ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4490), 4326)) = ST_AsEWKB(ST_Transform(ST_SetSRID('POINT(120 30)'::geometry, 4490), 4326))",
+            ] {
+                let got = Spi::get_one::<bool>(sql)
+                    .expect("SPI failed")
+                    .expect("no row returned");
+                assert!(got, "{sql}");
+            }
+        }
+
+        #[pg_test]
+        fn test_cgcs2000_destination_aliases() {
+            for alias in ["CGCS2000", "CGCS-2000", "4490", "EPSG:4490"] {
+                let sql = format!(
+                    "SELECT ST_SRID(ST_EvilTransform(g, '{alias}')) = 4490 AND ST_AsEWKB(ST_EvilTransform(g, '{alias}')) = ST_AsEWKB(ST_EvilTransform(g, 4490)) FROM (SELECT ST_SetSRID('POINT(120 30)'::geometry, 4326) AS g) AS t"
+                );
+                let got = Spi::get_one::<bool>(&sql)
+                    .expect("SPI failed")
+                    .expect("no row returned");
+                assert!(got, "{sql}");
+            }
+        }
+
+        #[pg_test]
+        fn test_cgcs2000_named_source_and_custom_crs() {
+            for sql in [
+                "SELECT ST_AsEWKB(ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS2000', 4326)) = ST_AsEWKB(ST_Transform(ST_SetSRID('POINT(120 30)'::geometry, 4490), 4326))",
+                "SELECT ST_AsEWKB(ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4490', 'GCJ02')) = ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4490), 990001))",
+                "SELECT ST_AsEWKB(ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS-2000', 990002)) = ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 4490), 990002))",
+                "SELECT ST_AsEWKB(ST_EvilTransform('POINT(120 30)'::geometry, 'GCJ02', 'CGCS2000')) = ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 990001), 4490))",
+                "SELECT ST_AsEWKB(ST_EvilTransform('POINT(120 30)'::geometry, 'BD09', 'EPSG:4490')) = ST_AsEWKB(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, 990002), 4490))",
+            ] {
+                let got = Spi::get_one::<bool>(sql)
+                    .expect("SPI failed")
+                    .expect("no row returned");
+                assert!(got, "{sql}");
+            }
         }
 
         #[pg_test]
