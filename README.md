@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo/pg-eviltransform-512.png" alt="pg_eviltransform logo" width="160" height="160">
+</p>
+
 # pg_eviltransform (Rust/pgrx)
 
-[中文文档 (Chinese README)](README.zh-CN.md)
+[中文文档 (Chinese README)](README.zh-CN.md) | [Logo assets](assets/logo)
 
 `pg_eviltransform` extends PostGIS `ST_Transform` with BD09/GCJ02 support and a geographic CGCS2000 name.
 
