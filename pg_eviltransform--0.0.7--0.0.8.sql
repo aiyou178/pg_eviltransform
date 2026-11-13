@@ -1,0 +1,2 @@
+-- No SQL object changes are required for 0.0.8; fixes are in the shared library.
+-- This migration lets existing 0.0.7 installations update extension metadata.
