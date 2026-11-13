@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="assets/logo/pg-eviltransform-512.png" alt="pg_eviltransform logo" width="160" height="160">
+</p>
+
 # pg_eviltransform (Rust/pgrx)
 
-[English README](README.md)
+[English README](README.md) | [Logo 资源](assets/logo)
 
 `pg_eviltransform` 是对 PostGIS `ST_Transform` 的扩展，增加了 BD09 / GCJ02 坐标系和地理坐标系 CGCS2000 名称支持。
 
