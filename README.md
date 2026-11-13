@@ -136,7 +136,7 @@ Jenks: 100,000 rows, 1,000 distinct values, 7 classes, work_mem=8MB:
 | 19rc2 | 9.25 ms | 8.36 ms | 82.90 ms |
 
 The [full report](doc/benchmarks/2026-11-13-pgrx-0.20.0.md) includes before/after
-comparisons, timing ranges, raw plans and differences between the SQL baselines
+comparisons, timing ranges and differences between the SQL baselines
 and native functions. Results depend on the workload and host.
 
 Reproduce in a disposable database (the scripts recreate benchmark tables):
