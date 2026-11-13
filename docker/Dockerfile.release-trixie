@@ -42,7 +42,12 @@ RUN set -eux; \
         -e "s|https://apt.postgresql.org/pub/repos/apt|$PGDG_MIRROR|g" \
         {} +; \
   fi; \
-  apt-get update; \
+  # Bootstrap the trust store from Debian before contacting PGDG over HTTPS.
+  mv /etc/apt/sources.list.d/pgdg.list /tmp/pgdg.list; \
+  apt-get update -o APT::Update::Error-Mode=any; \
+  apt-get install -y --no-install-recommends ca-certificates; \
+  mv /tmp/pgdg.list /etc/apt/sources.list.d/pgdg.list; \
+  apt-get update -o APT::Update::Error-Mode=any; \
   pg_packages=" \
     postgresql-client-15 \
     postgresql-client-16 \
@@ -60,7 +65,6 @@ RUN set -eux; \
     postgresql-server-dev-18 \
     postgresql-server-dev-19"; \
   apt-get install -y --no-install-recommends \
-    ca-certificates \
     curl \
     pkg-config \
     clang \
