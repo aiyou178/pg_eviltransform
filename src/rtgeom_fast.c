@@ -241,15 +241,9 @@ int pgct_transform_gserialized(const uint8_t* input,
 
   gserialized_set_srid(ctx, out, dst_srid);
 
-  *out_ptr = (uint8_t*)malloc(out_size);
-  if (*out_ptr == NULL) {
-    rtfree(ctx, out);
-    return 7;
-  }
-
-  memcpy(*out_ptr, out, out_size);
+  /* pgct_ctx installs malloc/free, so transfer this buffer to the Rust caller. */
+  *out_ptr = (uint8_t*)out;
   *out_len = out_size;
-  rtfree(ctx, out);
   return 0;
 }
 

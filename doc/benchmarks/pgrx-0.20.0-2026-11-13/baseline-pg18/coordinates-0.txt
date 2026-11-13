@@ -1,0 +1,121 @@
+Timing is on.
+SET
+Time: 0.054 ms
+SET
+Time: 0.027 ms
+SET
+Time: 0.039 ms
+                                                         version                                                          
+--------------------------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.7 (Debian 18.7-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+(1 row)
+
+Time: 0.591 ms
+ setseed 
+---------
+ 
+(1 row)
+
+Time: 0.295 ms
+CREATE EXTENSION
+Time: 0.310 ms
+CREATE EXTENSION
+Time: 0.021 ms
+DO
+Time: 0.875 ms
+loading regex_eviltransform.sql
+CREATE SCHEMA
+Time: 3.166 ms
+CREATE FUNCTION
+Time: 0.929 ms
+CREATE FUNCTION
+Time: 0.290 ms
+CREATE FUNCTION
+Time: 0.169 ms
+CREATE FUNCTION
+Time: 0.148 ms
+CREATE FUNCTION
+Time: 0.167 ms
+CREATE FUNCTION
+Time: 0.171 ms
+CREATE FUNCTION
+Time: 0.449 ms
+CREATE FUNCTION
+Time: 0.177 ms
+CREATE FUNCTION
+Time: 1.786 ms
+CREATE FUNCTION
+Time: 0.219 ms
+CREATE FUNCTION
+Time: 0.125 ms
+CREATE FUNCTION
+Time: 0.401 ms
+CREATE FUNCTION
+Time: 0.201 ms
+CREATE FUNCTION
+Time: 0.201 ms
+CREATE FUNCTION
+Time: 0.171 ms
+DROP TABLE
+Time: 0.068 ms
+SELECT 200000
+Time: 98.781 ms
+ANALYZE
+Time: 63.271 ms
+baseline check
+ total_rows 
+------------
+     200000
+(1 row)
+
+Time: 4.350 ms
+benchmark: 4326 -> 990001
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=6728.00..6728.01 rows=1 width=8) (actual time=122.890..122.891 rows=1.00 loops=1)
+   Buffers: shared hit=1731
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.004..7.074 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning:
+   Buffers: shared hit=36 read=1
+ Planning Time: 0.099 ms
+ Execution Time: 123.639 ms
+(8 rows)
+
+Time: 125.227 ms
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=105728.00..105728.01 rows=1 width=8) (actual time=5441.549..5441.550 rows=1.00 loops=1)
+   Buffers: shared hit=2077 read=13 dirtied=3
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.004..14.335 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.078 ms
+ Execution Time: 5441.560 ms
+(8 rows)
+
+Time: 5441.852 ms (00:05.442)
+benchmark: 990002 -> 3857 (via 4326)
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=7728.00..7728.01 rows=1 width=8) (actual time=332.377..332.378 rows=1.00 loops=1)
+   Buffers: shared hit=1955 read=16 dirtied=3
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.006..7.510 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning Time: 0.025 ms
+ Execution Time: 332.390 ms
+(6 rows)
+
+Time: 332.584 ms
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=205728.00..205728.01 rows=1 width=8) (actual time=15543.248..15543.248 rows=1.00 loops=1)
+   Buffers: shared hit=1786 read=1
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.004..19.493 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning Time: 0.073 ms
+ Execution Time: 15543.273 ms
+(6 rows)
+
+Time: 15543.712 ms (00:15.544)

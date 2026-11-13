@@ -9,13 +9,19 @@ BREAKS="${BREAKS:-7}"
 WORK_MEM="${WORK_MEM:-16MB}"
 CDB_JENKSBINS_SQL="${CDB_JENKSBINS_SQL:-$ROOT_DIR/scripts/CDB_JenksBins.sql}"
 
-cat > "/tmp/benchmark_jenksbins.sql" <<SQL
+benchmark_sql="$(mktemp)"
+baseline_sql="$(mktemp)"
+trap 'rm -f "$baseline_sql" "$benchmark_sql"' EXIT
+cat > "$benchmark_sql" <<SQL
 \\timing on
 \\pset pager off
 
 CREATE EXTENSION IF NOT EXISTS pg_eviltransform;
 
 SET work_mem = :'work_mem';
+SET jit = off;
+SET max_parallel_workers_per_gather = 0;
+SELECT version();
 
 DROP TABLE IF EXISTS public.bench_jenks_values;
 CREATE TABLE public.bench_jenks_values AS
@@ -41,12 +47,6 @@ SELECT ST_JenksBins(value, :breaks)
 FROM public.bench_jenks_values;
 SQL
 
-baseline_sql="$(mktemp)"
-cleanup() {
-  rm -f "$baseline_sql" "/tmp/benchmark_jenksbins.sql"
-}
-trap cleanup EXIT
-
 {
   sed 's/@extschema@/public/g' "$CDB_JENKSBINS_SQL"
 } > "$baseline_sql"
@@ -58,4 +58,4 @@ psql \
   -v distinct_values="$DISTINCT_VALUES" \
   -v breaks="$BREAKS" \
   -v work_mem="$WORK_MEM" \
-  -f "/tmp/benchmark_jenksbins.sql" 2>&1 | tee "$REPORT_PATH"
+  -f "$benchmark_sql" 2>&1 | tee "$REPORT_PATH"

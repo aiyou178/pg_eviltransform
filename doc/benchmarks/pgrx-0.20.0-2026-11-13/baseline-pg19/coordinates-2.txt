@@ -1,0 +1,121 @@
+Timing is on.
+SET
+Time: 0.062 ms
+SET
+Time: 0.053 ms
+SET
+Time: 0.058 ms
+                                                           version                                                           
+-----------------------------------------------------------------------------------------------------------------------------
+ PostgreSQL 19rc2 (Debian 19~rc2-1.pgdg13+1) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+(1 row)
+
+Time: 0.173 ms
+ setseed 
+---------
+ 
+(1 row)
+
+Time: 0.122 ms
+CREATE EXTENSION
+Time: 0.153 ms
+CREATE EXTENSION
+Time: 0.055 ms
+DO
+Time: 0.538 ms
+loading regex_eviltransform.sql
+CREATE SCHEMA
+Time: 0.046 ms
+CREATE FUNCTION
+Time: 0.654 ms
+CREATE FUNCTION
+Time: 0.322 ms
+CREATE FUNCTION
+Time: 0.256 ms
+CREATE FUNCTION
+Time: 0.313 ms
+CREATE FUNCTION
+Time: 0.223 ms
+CREATE FUNCTION
+Time: 0.223 ms
+CREATE FUNCTION
+Time: 0.303 ms
+CREATE FUNCTION
+Time: 0.245 ms
+CREATE FUNCTION
+Time: 0.261 ms
+CREATE FUNCTION
+Time: 0.213 ms
+CREATE FUNCTION
+Time: 0.176 ms
+CREATE FUNCTION
+Time: 0.199 ms
+CREATE FUNCTION
+Time: 0.214 ms
+CREATE FUNCTION
+Time: 0.188 ms
+CREATE FUNCTION
+Time: 0.162 ms
+DROP TABLE
+Time: 0.862 ms
+SELECT 200000
+Time: 103.020 ms
+ANALYZE
+Time: 57.029 ms
+baseline check
+ total_rows 
+------------
+     200000
+(1 row)
+
+Time: 5.104 ms
+benchmark: 4326 -> 990001
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=6728.00..6728.01 rows=1 width=8) (actual time=130.294..130.295 rows=1.00 loops=1)
+   Buffers: shared hit=1731
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.003..5.581 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning:
+   Buffers: shared hit=38
+ Planning Time: 0.093 ms
+ Execution Time: 130.888 ms
+(8 rows)
+
+Time: 131.208 ms
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=105728.00..105728.01 rows=1 width=8) (actual time=6014.993..6014.994 rows=1.00 loops=1)
+   Buffers: shared hit=2095
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.003..17.238 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.073 ms
+ Execution Time: 6015.004 ms
+(8 rows)
+
+Time: 6015.549 ms (00:06.016)
+benchmark: 990002 -> 3857 (via 4326)
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=7728.00..7728.01 rows=1 width=8) (actual time=365.494..365.494 rows=1.00 loops=1)
+   Buffers: shared hit=1977
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.004..6.579 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning Time: 0.043 ms
+ Execution Time: 365.505 ms
+(6 rows)
+
+Time: 365.788 ms
+                                                          QUERY PLAN                                                          
+------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=205728.00..205728.01 rows=1 width=8) (actual time=16743.483..16743.484 rows=1.00 loops=1)
+   Buffers: shared hit=1787
+   ->  Seq Scan on bench_points  (cost=0.00..3728.00 rows=200000 width=32) (actual time=0.003..17.719 rows=200000.00 loops=1)
+         Buffers: shared hit=1728
+ Planning Time: 0.075 ms
+ Execution Time: 16743.493 ms
+(6 rows)
+
+Time: 16743.818 ms (00:16.744)

@@ -1,0 +1,62 @@
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg19")[0m[39m and `pg_config` from [36m/usr/lib/postgresql/19/bin/pg_config[39m
+CARGO_PGRX_TEST_PGDATA="/tmp/eviltransform-test19" CARGO_PGRX_TEST_RUNAS="postgres" CARGO_TARGET_DIR="/tmp/target-current" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="release" PGRX_FEATURES="pg_test pg19" PGRX_MANIFEST_PATH="/work/Cargo.toml" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/root/.rustup/toolchains/1.99.1-aarch64-unknown-linux-gnu/bin/cargo" "test" "--manifest-path" "/work/Cargo.toml" "--features" "pg_test pg19" "--no-default-features" "--release"
+   Compiling pg_eviltransform v0.0.7 (/work)
+   Compiling pgrx v0.20.0
+   Compiling pgrx-tests v0.20.0
+    Finished `release` profile [optimized] target(s) in 15.55s
+     Running unittests src/lib.rs (/tmp/target-current/release/deps/pg_eviltransform-234747f1caaac2cc)
+
+running 28 tests
+test coord::tests::test_gcj2bd_reference_point ... ok
+test coord::tests::test_out_of_china_not_changed ... ok
+test coord::tests::test_wgs2gcj_reference_point ... ok
+test ewkb::tests::test_invalid_geometry_type ... ok
+test ewkb::tests::test_transform_point_wkb ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg19")[0m[39m and `pg_config` from [36m/usr/lib/postgresql/19/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg19[39m
+[32m[1m     Running[0m[39m command [36mCARGO_PGRX_EXTVERSION="0.0.7" "/root/.rustup/toolchains/1.99.1-aarch64-unknown-linux-gnu/bin/cargo" "rustc" "--lib" "--manifest-path" "/work/Cargo.toml" "--release" "--features" "pg_test pg19" "--no-default-features" "--message-format=json-render-diagnostics" "--" "-C" "link-arg=-Wl,--no-gc-sections"[39m
+   Compiling pg_eviltransform v0.0.7 (/work)
+    Finished `release` profile [optimized] target(s) in 1.55s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36mtarget-current/release/pg_eviltransform-pg19/usr/share/postgresql/19/extension/pg_eviltransform.control[39m
+[32m[1m     Copying[0m[39m shared library to [36mtarget-current/release/pg_eviltransform-pg19/usr/lib/postgresql/19/lib/pg_eviltransform.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m44[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m2[0m[39m unique), [36m[1m37[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m1[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m4[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m     Writing[0m[39m SQL entities to /tmp/target-current/release/pg_eviltransform-pg19/usr/share/postgresql/19/extension/pg_eviltransform--0.0.7.sql
+[32m[1m    Finished[0m[39m installing pg_eviltransform
+
+Using sudo to copy extension files from [36m/tmp/target-current/release/pg_eviltransform-pg19[39m
+[32m[1m       Running[0m[39m sudo cp /tmp/target-current/release/pg_eviltransform-pg19/usr/share/postgresql/19/extension/pg_eviltransform.control /usr/share/postgresql/19/extension/pg_eviltransform.control
+[32m[1m       Running[0m[39m sudo cp /tmp/target-current/release/pg_eviltransform-pg19/usr/lib/postgresql/19/lib/pg_eviltransform.so /usr/lib/postgresql/19/lib/pg_eviltransform.so
+[32m[1m       Running[0m[39m sudo cp /tmp/target-current/release/pg_eviltransform-pg19/usr/share/postgresql/19/extension/pg_eviltransform--0.0.7.sql /usr/share/postgresql/19/extension/pg_eviltransform--0.0.7.sql
+test extension::tests::pg_test_integer_overload_to_gcj02 ... ok
+test extension::tests::pg_test_direct_gcj_bd_mode_matches_core_transform ... ok
+test extension::tests::pg_test_geometry_domain_preserves_type_and_coordinates ... ok
+test extension::tests::pg_test_delegates_to_st_transform_for_standard_srids ... ok
+test extension::tests::pg_test_from_proj_to_srid_overload_custom_target ... ok
+test extension::tests::pg_test_jenksbins_aggregate_matches_array ... ok
+test extension::tests::pg_test_jenksbins_array_overloads ... ok
+test extension::tests::pg_test_jenksbins_duplicate_heavy_large_aggregate ... ok
+test jenks::tests::distinct_count_shortcut_returns_sorted_unique_values ... ok
+test jenks::tests::duplicate_heavy_inputs_are_weighted ... ok
+test jenks::tests::empty_input_returns_none ... ok
+test jenks::tests::exact_edges_match_known_clusters ... ok
+test jenks::tests::invalid_breaks_error ... ok
+test jenks::tests::lower_edges_are_returned_when_inverted ... ok
+test jenks::tests::natural_breaks_path_matches_weighted_fallback_on_unique_values ... ok
+test jenks::tests::non_finite_values_error ... ok
+test extension::tests::pg_test_jenksbins_numeric_aggregate_and_invert ... ok
+test extension::tests::pg_test_rejects_non_geometry_before_pointer_access ... ok
+test extension::tests::pg_test_text_to_proj_overload_custom_target ... ok
+test extension::tests::pg_test_source_geometry_not_mutated ... ok
+test extension::tests::pg_test_cgcs2000_destination_aliases ... ok
+test extension::tests::pg_test_cgcs2000_integer_delegates_to_postgis ... ok
+test extension::tests::pg_test_cgcs2000_named_source_and_custom_crs ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.72s
+
+   Doc-tests pg_eviltransform
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

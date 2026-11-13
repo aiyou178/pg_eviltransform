@@ -22,6 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.1
       - name: Run Rust unit tests
         run: cargo test --lib
 
@@ -30,24 +32,55 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - pg_label: pg18
-            pg_major: "18"
-            base_image: postgres:18.3-trixie
+          - pg_label: pg15
+            pg_major: "15"
+            base_image: postgres:15.20-trixie
             arch: amd64
             runner: ubuntu-24.04
-          - pg_label: pg18
-            pg_major: "18"
-            base_image: postgres:18.3-trixie
+          - pg_label: pg15
+            pg_major: "15"
+            base_image: postgres:15.20-trixie
             arch: arm64
             runner: ubuntu-24.04-arm
-          - pg_label: pg19-beta
-            pg_major: "19"
-            base_image: postgres:19beta4-trixie
+          - pg_label: pg16
+            pg_major: "16"
+            base_image: postgres:16.16-trixie
             arch: amd64
             runner: ubuntu-24.04
-          - pg_label: pg19-beta
+          - pg_label: pg16
+            pg_major: "16"
+            base_image: postgres:16.16-trixie
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - pg_label: pg17
+            pg_major: "17"
+            base_image: postgres:17.12-trixie
+            arch: amd64
+            runner: ubuntu-24.04
+          - pg_label: pg17
+            pg_major: "17"
+            base_image: postgres:17.12-trixie
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - pg_label: pg18
+            pg_major: "18"
+            base_image: postgres:18.7-trixie
+            arch: amd64
+            runner: ubuntu-24.04
+          - pg_label: pg18
+            pg_major: "18"
+            base_image: postgres:18.7-trixie
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          # Install PG19 packages on a base available for both architectures.
+          - pg_label: pg19-rc
             pg_major: "19"
-            base_image: postgres:19beta4-trixie
+            base_image: postgres:18.7-trixie
+            arch: amd64
+            runner: ubuntu-24.04
+          - pg_label: pg19-rc
+            pg_major: "19"
+            base_image: postgres:18.7-trixie
             arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
@@ -59,7 +92,7 @@ jobs:
         run: |
           build_args=(
             --build-arg "BASE_IMAGE=${{ matrix.base_image }}"
-            --build-arg "PG_MAJOR=${{ matrix.pg_major }}"
+            --build-arg "TARGET_PG_MAJOR=${{ matrix.pg_major }}"
           )
           if [[ -n "${DEBIAN_MIRROR:-}" ]]; then
             build_args+=(--build-arg "DEBIAN_MIRROR=$DEBIAN_MIRROR")
@@ -115,6 +148,7 @@ jobs:
               exit 1
             fi
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
+            cargo pgrx test "pg${PG_MAJOR}" --release --features pg_test --no-default-features --runas postgres --pgdata /tmp/pg-eviltransform-tests
             report_path="/work/benchmark_pg${PG_MAJOR}_report.txt"
             if ! ROWS=50000 PG_MAJOR="$PG_MAJOR" PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh "$report_path"; then
               tail -n 200 "$report_path" >&2 || true

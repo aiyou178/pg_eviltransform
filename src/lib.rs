@@ -90,6 +90,7 @@ mod extension {
     #[derive(Clone, Copy)]
     struct PostgisFns {
         st_transform_geom_int: pg_sys::Oid,
+        geometry_oid: pg_sys::Oid,
     }
 
     fn lookup_regprocedure_oid(sig: &str) -> pg_sys::Oid {
@@ -106,8 +107,20 @@ mod extension {
 
     fn postgis_fns() -> &'static PostgisFns {
         static FNS: OnceLock<PostgisFns> = OnceLock::new();
-        FNS.get_or_init(|| PostgisFns {
-            st_transform_geom_int: lookup_regprocedure_oid("st_transform(geometry,integer)"),
+        FNS.get_or_init(|| {
+            // Resolve PostGIS objects in their owning schema, independent of search_path.
+            let schema = Spi::get_one::<String>(
+                "SELECT pg_catalog.quote_ident(n.nspname) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'postgis'",
+            )
+            .unwrap_or_else(|err| error!("failed to resolve PostGIS schema: {err}"))
+            .unwrap_or_else(|| error!("PostGIS extension is not installed"));
+            let st_transform_geom_int = lookup_regprocedure_oid(&format!(
+                "{schema}.st_transform({schema}.geometry,integer)"
+            ));
+            PostgisFns {
+                st_transform_geom_int,
+                geometry_oid: unsafe { pg_sys::get_func_rettype(st_transform_geom_int) },
+            }
         })
     }
 
@@ -174,7 +187,7 @@ mod extension {
         unsafe {
             ptr::copy_nonoverlapping(out_ptr, out_varlena, out_len);
             pgct_free(out_ptr.cast());
-            pgrx::set_varsize_4b(out_varlena.cast::<pg_sys::varlena>(), out_len as i32);
+            pg_sys::SET_VARSIZE!(out_varlena.cast::<pg_sys::varlena>(), out_len as i32);
         }
 
         pg_sys::Datum::from(out_varlena.cast::<pg_sys::varlena>())
@@ -183,6 +196,12 @@ mod extension {
     #[pg_extern(immutable, strict, parallel_safe, name = "st_eviltransform")]
     fn st_eviltransform_integer(geom: AnyElement, dst_srid: i32) -> AnyElement {
         let fns = postgis_fns();
+        // anyelement also accepts scalars; only geometry storage can be detoasted here.
+        if geom.oid() != fns.geometry_oid
+            && unsafe { pg_sys::getBaseType(geom.oid()) } != fns.geometry_oid
+        {
+            error!("ST_EvilTransform requires a PostGIS geometry");
+        }
         let input = geom.datum();
         let src_srid = gserialized_get_srid(input);
 
@@ -252,14 +271,11 @@ mod extension {
         }
     }
 
-    fn collect_array_values<T, F>(values: Vec<Option<T>>, convert: F) -> Vec<f64>
+    fn collect_array_values<T, F>(values: Vec<Option<T>>, convert: F) -> impl Iterator<Item = f64>
     where
         F: Fn(T) -> f64,
     {
-        values
-            .into_iter()
-            .filter_map(|value| value.map(&convert))
-            .collect()
+        values.into_iter().flatten().map(convert)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
@@ -398,7 +414,7 @@ mod extension {
             }
         }
 
-        fn finalize(self) -> Option<Vec<f64>> {
+        fn finalize(&self) -> Option<Vec<f64>> {
             if !self.initialized {
                 return None;
             }
@@ -434,7 +450,7 @@ mod extension {
             _direct_args: Self::OrderedSetArgs,
             _fcinfo: pg_sys::FunctionCallInfo,
         ) -> Self::Finalize {
-            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.finalize())
         }
     }
 
@@ -463,7 +479,7 @@ mod extension {
             _direct_args: Self::OrderedSetArgs,
             _fcinfo: pg_sys::FunctionCallInfo,
         ) -> Self::Finalize {
-            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.finalize())
         }
     }
 
@@ -492,7 +508,7 @@ mod extension {
             _direct_args: Self::OrderedSetArgs,
             _fcinfo: pg_sys::FunctionCallInfo,
         ) -> Self::Finalize {
-            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.finalize())
         }
     }
 
@@ -521,7 +537,7 @@ mod extension {
             _direct_args: Self::OrderedSetArgs,
             _fcinfo: pg_sys::FunctionCallInfo,
         ) -> Self::Finalize {
-            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.clone().finalize())
+            unsafe { current.get::<JenksBinsState>() }.and_then(|state| state.finalize())
         }
     }
 
@@ -622,18 +638,30 @@ mod extension {
     mod tests {
         use pgrx::prelude::*;
 
+        #[pg_test(error = "ST_EvilTransform requires a PostGIS geometry")]
+        fn test_rejects_non_geometry_before_pointer_access() {
+            Spi::run("SELECT ST_EvilTransform(42, 990001)").unwrap();
+        }
+
+        #[pg_test]
+        fn test_geometry_domain_preserves_type_and_coordinates() {
+            Spi::run("CREATE DOMAIN test_geometry AS geometry").unwrap();
+            assert_eq!(Spi::get_one::<bool>(
+                "SELECT pg_typeof(ST_EvilTransform(g, 990001)) = 'test_geometry'::regtype AND ST_AsEWKB(ST_EvilTransform(g, 990001)) = ST_AsEWKB(ST_EvilTransform(g::geometry, 990001)) FROM (SELECT 'SRID=4326;POINT(120 30)'::test_geometry AS g) t"
+            ).unwrap(), Some(true));
+        }
+
         #[pg_test]
         fn test_integer_overload_to_gcj02() {
-            let got = Spi::get_one::<String>(&format!(
-                "SELECT ST_AsText(ST_EvilTransform(ST_SetSRID('POINT(120 30)'::geometry, {}), {}))",
-                super::SRID_WGS84,
-                super::SRID_GCJ02
-            ))
+            // The legacy reference uses a different earth radius; compare coordinates,
+            // at the same tolerance as the core reference tests, rather than WKT text.
+            let got = Spi::get_one::<bool>(
+                "SELECT ST_SRID(g) = 990001 AND abs(ST_X(g) - 120.004660445597) < 1e-6 AND abs(ST_Y(g) - 29.997534331696) < 1e-6 FROM (SELECT ST_EvilTransform('SRID=4326;POINT(120 30)'::geometry, 990001) AS g) t",
+            )
             .expect("SPI failed")
             .expect("no row returned");
 
-            assert!(got.starts_with("POINT("));
-            assert!(got.contains("120.004660445597"));
+            assert!(got);
         }
 
         #[pg_test]
