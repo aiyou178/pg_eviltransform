@@ -65,6 +65,15 @@ SELECT extversion FROM pg_extension WHERE extname = 'pg_eviltransform';
 No `shared_preload_libraries` setting is needed. Application roles can call the
 installed API; text overloads also need `USAGE` on `eviltransform_internal`.
 
+### Upgrade from 0.0.7
+
+Upgrade PostgreSQL to a supported minor version and install the matching 0.0.8
+package. Reconnect to the database, then run:
+
+```sql
+ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.8';
+```
+
 ## Usage
 
 ### Coordinate conversion

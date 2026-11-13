@@ -63,6 +63,15 @@ SELECT extversion FROM pg_extension WHERE extname = 'pg_eviltransform';
 无须配置 `shared_preload_libraries`。应用角色可以调用已安装的 API；
 文本重载还需要对 `eviltransform_internal` schema 拥有 `USAGE` 权限。
 
+### 从 0.0.7 升级
+
+先将 PostgreSQL 升级到受支持的小版本，并安装匹配的 0.0.8 软件包。
+重新连接数据库后执行：
+
+```sql
+ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.8';
+```
+
 ## 用法
 
 ### 坐标转换
