@@ -16,10 +16,15 @@ if [[ "$REPORT_PATH" == "$ROOT_DIR/benchmark_pg18_report.txt" && "$PG_MAJOR" != 
   REPORT_PATH="$ROOT_DIR/benchmark_pg${PG_MAJOR}_report.txt"
 fi
 
-cat > "/tmp/benchmark_pg${PG_MAJOR}.sql" <<SQL
+benchmark_sql="$(mktemp)"
+trap 'rm -f "$benchmark_sql"' EXIT
+cat > "$benchmark_sql" <<SQL
 \\timing on
 SET client_min_messages TO warning;
 SET jit = off;
+SET max_parallel_workers_per_gather = 0;
+SELECT version();
+SELECT setseed(0.42);
 
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS pg_eviltransform;
@@ -86,6 +91,6 @@ FROM (
 ) t;
 SQL
 
-psql -v ON_ERROR_STOP=1 -f "/tmp/benchmark_pg${PG_MAJOR}.sql" 2>&1 | tee "$REPORT_PATH"
+psql -v ON_ERROR_STOP=1 -f "$benchmark_sql" 2>&1 | tee "$REPORT_PATH"
 
 echo "Benchmark report written to $REPORT_PATH"

@@ -6,11 +6,11 @@ IMAGE_NAME="${IMAGE_NAME:-pg_eviltransform/trixie-builder:local}"
 EXT_VERSION="${1:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
 OUT_DIR="${2:-$ROOT_DIR/dist}"
 OUT_DIR="$(cd "$(dirname "$OUT_DIR")" && pwd)/$(basename "$OUT_DIR")"
-PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18 19}"
+PG_VERSIONS="${PG_VERSIONS:-15 16 17 18 19}"
 BASE_IMAGE_SET="${BASE_IMAGE+x}"
 
 if [[ -z "$BASE_IMAGE_SET" ]]; then
-  BASE_IMAGE="postgres:19beta4-trixie"
+  BASE_IMAGE="postgres:18.7-trixie"
 fi
 
 mkdir -p "$OUT_DIR"

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
 EXT_VERSION="${EXT_VERSION:-$(awk -F'"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")}"
-PG_VERSIONS="${PG_VERSIONS:-14 15 16 17 18 19}"
+PG_VERSIONS="${PG_VERSIONS:-15 16 17 18 19}"
 ARCH="$(dpkg --print-architecture)"
 read -r -a PG_VERSION_LIST <<< "$PG_VERSIONS"
 
@@ -19,7 +19,7 @@ cd "$ROOT_DIR"
 
 init_args=()
 for pg in "${PG_VERSION_LIST[@]}"; do
-  if [[ ! "$pg" =~ ^(14|15|16|17|18|19)$ ]]; then
+  if [[ ! "$pg" =~ ^(15|16|17|18|19)$ ]]; then
     echo "unsupported PostgreSQL major version in PG_VERSIONS: $pg" >&2
     exit 2
   fi

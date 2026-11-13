@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
-# Release build image for pg_eviltransform packages on Debian trixie (PG14-19).
-ARG BASE_IMAGE=postgres:19beta4-trixie
+# Release build image for pg_eviltransform packages on Debian trixie (PG15-19).
+ARG BASE_IMAGE=postgres:18.7-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG CARGO_PGRX_VERSION=0.19.3
+ARG CARGO_PGRX_VERSION=0.20.0
+ARG RUST_TOOLCHAIN=1.99.1
 ARG DEBIAN_MIRROR=
 ARG DEBIAN_SECURITY_MIRROR=
 ARG PGDG_MIRROR=
@@ -13,9 +14,13 @@ ARG RUSTUP_UPDATE_ROOT=
 ARG CARGO_REGISTRIES_CRATES_IO_INDEX=
 
 ENV PATH=/root/.cargo/bin:$PATH \
+    CC=clang \
+    AR=llvm-ar \
     CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 
 RUN set -eux; \
+  sed -i 's|http://apt.postgresql.org|https://apt.postgresql.org|g' /etc/apt/sources.list.d/pgdg.list; \
+  sed -i '/trixie-pgdg/ s/$/ 19/' /etc/apt/sources.list.d/pgdg.list; \
   if [ -n "$DEBIAN_MIRROR" ]; then \
     find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
       sed -i \
@@ -39,19 +44,16 @@ RUN set -eux; \
   fi; \
   apt-get update; \
   pg_packages=" \
-    postgresql-client-14 \
     postgresql-client-15 \
     postgresql-client-16 \
     postgresql-client-17 \
     postgresql-client-18 \
     postgresql-client-19 \
-    postgresql-14 \
     postgresql-15 \
     postgresql-16 \
     postgresql-17 \
     postgresql-18 \
     postgresql-19 \
-    postgresql-server-dev-14 \
     postgresql-server-dev-15 \
     postgresql-server-dev-16 \
     postgresql-server-dev-17 \
@@ -62,6 +64,8 @@ RUN set -eux; \
     curl \
     pkg-config \
     clang \
+    libclang-dev \
+    llvm \
     llvm-dev \
     libc6-dev \
     libicu-dev \
@@ -92,7 +96,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
   else \
     curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal; \
   fi; \
-  rustup default stable; \
+  rustup default "$RUST_TOOLCHAIN"; \
   cargo install --locked cargo-pgrx --version "$CARGO_PGRX_VERSION"
 
 WORKDIR /work

@@ -1,0 +1,63 @@
+Timing is on.
+Pager usage is off.
+psql:/tmp/tmp.fCJky9WbdL:4: NOTICE:  extension "pg_eviltransform" already exists, skipping
+CREATE EXTENSION
+Time: 0.096 ms
+SET
+Time: 0.022 ms
+SET
+Time: 0.026 ms
+SET
+Time: 0.022 ms
+                                                         version                                                          
+--------------------------------------------------------------------------------------------------------------------------
+ PostgreSQL 18.7 (Debian 18.7-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+(1 row)
+
+Time: 0.136 ms
+DROP TABLE
+Time: 1.123 ms
+SELECT 100000
+Time: 32.369 ms
+ANALYZE
+Time: 9.315 ms
+benchmark: CartoDB CDB_JenksBins(array_agg(value::numeric), breaks)
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=1948.00..1948.26 rows=1 width=32) (actual time=84.556..84.556 rows=1.00 loops=1)
+   Buffers: shared hit=1050
+   ->  Seq Scan on bench_jenks_values  (cost=0.00..1448.00 rows=100000 width=8) (actual time=0.004..2.816 rows=100000.00 loops=1)
+         Buffers: shared hit=448
+ Planning:
+   Buffers: shared hit=14
+ Planning Time: 0.036 ms
+ Execution Time: 84.797 ms
+(8 rows)
+
+Time: 85.021 ms
+benchmark: Rust ST_JenksBins(array_agg(value), breaks)
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=1698.00..1698.02 rows=1 width=32) (actual time=7.858..7.859 rows=1.00 loops=1)
+   Buffers: shared hit=448
+   ->  Seq Scan on bench_jenks_values  (cost=0.00..1448.00 rows=100000 width=8) (actual time=0.004..2.896 rows=100000.00 loops=1)
+         Buffers: shared hit=448
+ Planning Time: 0.008 ms
+ Execution Time: 10.493 ms
+(6 rows)
+
+Time: 10.595 ms
+benchmark: Rust streaming ST_JenksBins(value, breaks)
+                                                            QUERY PLAN                                                            
+----------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=1698.00..1698.01 rows=1 width=32) (actual time=8.684..8.684 rows=1.00 loops=1)
+   Buffers: shared hit=448
+   ->  Seq Scan on bench_jenks_values  (cost=0.00..1448.00 rows=100000 width=8) (actual time=0.003..2.523 rows=100000.00 loops=1)
+         Buffers: shared hit=448
+ Planning:
+   Buffers: shared hit=6
+ Planning Time: 0.012 ms
+ Execution Time: 8.696 ms
+(8 rows)
+
+Time: 8.791 ms
