@@ -10,17 +10,22 @@ PostGIS coordinate conversion for GCJ02, BD09 and CGCS2000, plus exact Jenks nat
 
 ## Installation
 
-Requires PostgreSQL and PostGIS. Current source builds support:
+Requires PostGIS and PostgreSQL with the following minimum versions for both
+the server runtime and build headers. Later minor releases within each listed
+major version are supported:
 
 | PostgreSQL | Minimum runtime / build headers |
 | --- | --- |
-| 15 | 15.20 |
-| 16 | 16.16 |
-| 17 | 17.12 |
-| 18 | 18.7 |
+| 15 | 15.20+ |
+| 16 | 16.16+ |
+| 17 | 17.12+ |
+| 18 | 18.7+ |
 | 19 | 19rc2, experimental |
 
-These minimums include the PostgreSQL security fixes used by pgrx 0.20.0.
+These are compatibility requirements, not just CI test versions. Current
+builds use the patched PostgreSQL headers required for pgrx 0.20.0's composite
+datum security fix (CVE-2026-6460); binaries built against those headers cannot
+load on earlier minor releases. PG19 support is experimental and targets 19rc2.
 PG14 is no longer supported by current source builds. Binary availability is
 release-specific: the [pgext.cloud catalog](https://pgext.cloud/ext/pg_eviltransform)
 currently lists older 0.0.7 / pgrx 0.19.3 packages for PG14-18. Check its
@@ -182,7 +187,28 @@ The tag-triggered release workflow also produces RPMs.
 - [PostGIS](https://postgis.net/) and [librttopo](https://git.osgeo.org/gitea/rttopo/librttopo): geometry processing.
 - [pgrx](https://github.com/pgcentralfoundation/pgrx) and [natural-breaks](https://github.com/uratne/natural-breaks): Rust extension framework and Jenks implementation.
 - [CartoDB CDB_JenksBins](https://github.com/CartoDB/cartodb-postgresql/blob/master/scripts-available/CDB_JenksBins.sql): benchmark-only SQL baseline, copyright 2014 Vizzuality, BSD 3-Clause.
-- [CN112000902B](https://patents.google.com/patent/CN112000902B/zh): reference for `regex_eviltransform.sql`; cite it when using that SQL approach.
+
+### Citation
+
+Patent reference for the regex-based SQL approach:
+
+- [CN112000902B](https://patents.google.com/patent/CN112000902B/zh)
+
+If you use the regex-based SQL approach, cite:
+
+```bibtex
+@patent{CN112000902B,
+  title     = {用于地图区域绘制的方法、电子设备和存储介质},
+  author    = {梁展钊},
+  number    = {CN112000902B},
+  year      = {2021},
+  type      = {Chinese Patent},
+  assignee  = {Shanghai Maice Data Technology Co., Ltd.; Maice (Shanghai) Intelligent Technology Co., Ltd.},
+  url       = {https://patents.google.com/patent/CN112000902B}
+}
+```
+
+### License
 
 Project source is [MIT licensed](LICENSE). librttopo is GPL-2.0-or-later;
 third-party components retain their own licenses.

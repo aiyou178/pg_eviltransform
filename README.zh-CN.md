@@ -10,17 +10,21 @@
 
 ## 安装
 
-依赖 PostgreSQL 和 PostGIS。当前源码构建支持：
+依赖 PostGIS，以及满足以下最低版本要求的 PostgreSQL。服务器运行时和构建头文件
+均须达到要求；支持所列主版本内的后续小版本：
 
 | PostgreSQL | 最低运行时及构建头文件版本 |
 | --- | --- |
-| 15 | 15.20 |
-| 16 | 16.16 |
-| 17 | 17.12 |
-| 18 | 18.7 |
+| 15 | 15.20+ |
+| 16 | 16.16+ |
+| 17 | 17.12+ |
+| 18 | 18.7+ |
 | 19 | 19rc2，实验支持 |
 
-这些最低版本包含 pgrx 0.20.0 使用的 PostgreSQL 安全修复，当前源码不再支持 PG14。
+这些是兼容性要求，而非仅用于 CI 的测试版本。当前构建使用包含复合数据安全修复
+（CVE-2026-6460）的 PostgreSQL 头文件，以启用 pgrx 0.20.0 中的相应修复；
+基于这些头文件构建的二进制无法在更早的小版本上加载。PG19 以 19rc2 为实验支持目标。
+当前源码不再支持 PG14。
 二进制包的支持范围取决于发行版本：[pgext.cloud 目录](https://pgext.cloud/ext/pg_eviltransform)
 目前列出的是较早的 0.0.7 / pgrx 0.19.3 构建，覆盖 PG14-18。
 安装前请核对目录中的 PostgreSQL、操作系统和架构矩阵。
@@ -178,7 +182,28 @@ scripts/release_debian_trixie.sh  # Docker 构建 PG15-19 DEB，输出至 dist/
 - [PostGIS](https://postgis.net/) 和 [librttopo](https://git.osgeo.org/gitea/rttopo/librttopo)：几何处理。
 - [pgrx](https://github.com/pgcentralfoundation/pgrx) 和 [natural-breaks](https://github.com/uratne/natural-breaks)：Rust 扩展框架和 Jenks 实现。
 - [CartoDB CDB_JenksBins](https://github.com/CartoDB/cartodb-postgresql/blob/master/scripts-available/CDB_JenksBins.sql)：仅用于基准的 SQL 实现，版权归 2014 Vizzuality，采用 BSD 3-Clause。
-- [CN112000902B](https://patents.google.com/patent/CN112000902B/zh)：`regex_eviltransform.sql` 的参考专利；使用该 SQL 方案时请引用。
+
+### 引用
+
+Regex SQL 方案参考专利：
+
+- [CN112000902B](https://patents.google.com/patent/CN112000902B/zh)
+
+如使用基于 regex 的 SQL 实现，请引用：
+
+```bibtex
+@patent{CN112000902B,
+  title     = {用于地图区域绘制的方法、电子设备和存储介质},
+  author    = {梁展钊},
+  number    = {CN112000902B},
+  year      = {2021},
+  type      = {Chinese Patent},
+  assignee  = {Shanghai Maice Data Technology Co., Ltd.; Maice (Shanghai) Intelligent Technology Co., Ltd.},
+  url       = {https://patents.google.com/patent/CN112000902B}
+}
+```
+
+### 许可证
 
 项目源码采用 [MIT 许可证](LICENSE)。librttopo 采用 GPL-2.0-or-later，
 第三方组件保留各自的许可证。
