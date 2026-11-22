@@ -147,6 +147,9 @@ jobs:
               exit 1
             fi
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5432 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS pg_eviltransform;"
+            createdb -h 127.0.0.1 -U postgres catalog_lifecycle
+            psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d catalog_lifecycle -f tests/catalog_lifecycle.sql
+            dropdb -h 127.0.0.1 -U postgres catalog_lifecycle
             cargo pgrx test "pg${PG_MAJOR}" --release --features pg_test --no-default-features --runas postgres --pgdata /tmp/pg-eviltransform-tests
             report_path="/work/benchmark_pg${PG_MAJOR}_report.txt"
             if ! ROWS=50000 PG_MAJOR="$PG_MAJOR" PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres PGDATABASE=postgres scripts/benchmark_pg18.sh "$report_path"; then

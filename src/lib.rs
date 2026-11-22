@@ -20,9 +20,11 @@ mod eviltransform_internal {}
 
 #[cfg(feature = "extension")]
 mod extension {
+    use std::cell::Cell;
     use std::ffi::CString;
     use std::ptr;
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     use pgrx::Internal;
     use pgrx::datum::AnyElement;
@@ -90,7 +92,32 @@ mod extension {
     #[derive(Clone, Copy)]
     struct PostgisFns {
         st_transform_geom_int: pg_sys::Oid,
+        st_transform_geom_text: pg_sys::Oid,
+        st_transform_geom_text_int: pg_sys::Oid,
+        st_transform_geom_text_text: pg_sys::Oid,
+        st_setsrid: pg_sys::Oid,
         geometry_oid: pg_sys::Oid,
+    }
+
+    #[derive(Clone, Copy)]
+    struct CachedPostgisFns {
+        database: pg_sys::Oid,
+        generation: u64,
+        fns: PostgisFns,
+    }
+
+    static CATALOG_GENERATION: AtomicU64 = AtomicU64::new(0);
+    thread_local! {
+        static POSTGIS_FNS: Cell<Option<CachedPostgisFns>> = const { Cell::new(None) };
+    }
+
+    unsafe extern "C-unwind" fn invalidate_postgis_fns(
+        _arg: pg_sys::Datum,
+        _cacheid: i32,
+        _hashvalue: u32,
+    ) {
+        // Callbacks must not allocate, query catalogs, or borrow the cache.
+        CATALOG_GENERATION.fetch_add(1, Ordering::Relaxed);
     }
 
     fn lookup_regprocedure_oid(sig: &str) -> pg_sys::Oid {
@@ -105,9 +132,30 @@ mod extension {
         }
     }
 
-    fn postgis_fns() -> &'static PostgisFns {
-        static FNS: OnceLock<PostgisFns> = OnceLock::new();
-        FNS.get_or_init(|| {
+    fn postgis_fns() -> PostgisFns {
+        static CALLBACKS: OnceLock<()> = OnceLock::new();
+        CALLBACKS.get_or_init(|| unsafe {
+            for cache in [
+                pg_sys::SysCacheIdentifier::PROCOID,
+                pg_sys::SysCacheIdentifier::TYPEOID,
+                pg_sys::SysCacheIdentifier::NAMESPACEOID,
+            ] {
+                pg_sys::CacheRegisterSyscacheCallback(
+                    cache as i32,
+                    Some(invalidate_postgis_fns),
+                    pg_sys::Datum::from(0usize),
+                );
+            }
+        });
+        let database = unsafe { pg_sys::MyDatabaseId };
+        let generation = CATALOG_GENERATION.load(Ordering::Relaxed);
+        if let Some(cached) = POSTGIS_FNS.with(Cell::get)
+            && cached.database == database
+            && cached.generation == generation
+        {
+            return cached.fns;
+        }
+        let fns = {
             // Resolve PostGIS objects in their owning schema, independent of search_path.
             let schema = Spi::get_one::<String>(
                 "SELECT pg_catalog.quote_ident(n.nspname) FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'postgis'",
@@ -119,9 +167,29 @@ mod extension {
             ));
             PostgisFns {
                 st_transform_geom_int,
+                st_transform_geom_text: lookup_regprocedure_oid(&format!(
+                    "{schema}.st_transform({schema}.geometry,text)"
+                )),
+                st_transform_geom_text_int: lookup_regprocedure_oid(&format!(
+                    "{schema}.st_transform({schema}.geometry,text,integer)"
+                )),
+                st_transform_geom_text_text: lookup_regprocedure_oid(&format!(
+                    "{schema}.st_transform({schema}.geometry,text,text)"
+                )),
+                st_setsrid: lookup_regprocedure_oid(&format!(
+                    "{schema}.st_setsrid({schema}.geometry,integer)"
+                )),
                 geometry_oid: unsafe { pg_sys::get_func_rettype(st_transform_geom_int) },
             }
-        })
+        };
+        POSTGIS_FNS.with(|cache| {
+            cache.set(Some(CachedPostgisFns {
+                database,
+                generation,
+                fns,
+            }))
+        });
+        fns
     }
 
     #[inline]
@@ -129,36 +197,96 @@ mod extension {
         unsafe { pg_sys::OidFunctionCall2Coll(oid, pg_sys::InvalidOid, a1, a2) }
     }
 
-    fn gserialized_get_srid(geom: pg_sys::Datum) -> i32 {
-        let original = geom.cast_mut_ptr::<pg_sys::varlena>();
-        let detoasted = unsafe { pg_sys::pg_detoast_datum(original) as *mut pg_sys::varlena };
-        if detoasted.is_null() {
-            error!("failed to detoast geometry for SRID read");
+    fn call_nullable(oid: pg_sys::Oid, args: &[pg_sys::Datum]) -> Option<pg_sys::Datum> {
+        // OidFunctionCall rejects NULL results, but PostGIS's SQL overloads can return them.
+        unsafe {
+            let mut flinfo = pg_sys::FmgrInfo::default();
+            pg_sys::fmgr_info(oid, &mut flinfo);
+            let nargs = args.len() as i16;
+            let fcinfo = pg_sys::palloc0(pg_sys::SizeForFunctionCallInfo!(nargs).get() as usize)
+                .cast::<pg_sys::FunctionCallInfoBaseData>();
+            pg_sys::InitFunctionCallInfoData!(
+                *fcinfo,
+                &raw mut flinfo,
+                nargs,
+                pg_sys::InvalidOid,
+                ptr::null_mut::<pg_sys::Node>(),
+                ptr::null_mut::<pg_sys::Node>()
+            );
+            for (slot, value) in (*fcinfo).args.as_mut_slice(args.len()).iter_mut().zip(args) {
+                slot.value = *value;
+                slot.isnull = false;
+            }
+            let func = flinfo
+                .fn_addr
+                .unwrap_or_else(|| error!("PostGIS function has no address"));
+            let datum = pg_sys::ffi::pg_guard_ffi_boundary(|| func(fcinfo));
+            let result = if (*fcinfo).isnull { None } else { Some(datum) };
+            pg_sys::pfree(fcinfo.cast());
+            result
         }
-
-        let mut srid = 0i32;
-        let rc = unsafe { pgct_gserialized_get_srid(detoasted.cast::<u8>(), &mut srid) };
-        if detoasted != original {
-            unsafe { pg_sys::pfree(detoasted.cast()) };
-        }
-        if rc != 0 {
-            error!("failed to read geometry SRID using librttopo, rc={rc}");
-        }
-        srid
     }
 
-    fn apply_custom_mode(geom: pg_sys::Datum, mode: i32, dst_srid: i32) -> pg_sys::Datum {
-        let original = geom.cast_mut_ptr::<pg_sys::varlena>();
-        let detoasted = unsafe { pg_sys::pg_detoast_datum(original) as *mut pg_sys::varlena };
-        if detoasted.is_null() {
-            error!("failed to detoast geometry for custom transform");
+    struct DetoastedGeometry {
+        original: *mut pg_sys::varlena,
+        ptr: *mut pg_sys::varlena,
+    }
+
+    impl DetoastedGeometry {
+        fn new(geom: pg_sys::Datum) -> Self {
+            let original = geom.cast_mut_ptr::<pg_sys::varlena>();
+            let ptr = unsafe { pg_sys::pg_detoast_datum(original) };
+            Self { original, ptr }
         }
 
+        fn srid(&self) -> i32 {
+            let mut srid = 0i32;
+            let rc = unsafe { pgct_gserialized_get_srid(self.ptr.cast::<u8>(), &mut srid) };
+            if rc != 0 {
+                error!("failed to read geometry SRID using librttopo, rc={rc}");
+            }
+            srid
+        }
+
+        fn make_writable(&mut self) {
+            // librttopo's read/write iterator aliases serialized coordinate storage.
+            // A detoast copy is already ours; an unmodified borrowed datum is not.
+            if self.ptr == self.original {
+                self.ptr = unsafe { pg_sys::pg_detoast_datum_copy(self.ptr) };
+            }
+        }
+
+        fn finish(mut self, result: pg_sys::Datum) -> pg_sys::Datum {
+            if result.cast_mut_ptr::<pg_sys::varlena>() == self.ptr {
+                self.original = self.ptr;
+            }
+            result
+        }
+    }
+
+    impl Drop for DetoastedGeometry {
+        fn drop(&mut self) {
+            if self.ptr != self.original {
+                unsafe { pg_sys::pfree(self.ptr.cast()) };
+            }
+        }
+    }
+
+    struct RttopoBuffer(*mut u8);
+
+    impl Drop for RttopoBuffer {
+        fn drop(&mut self) {
+            unsafe { pgct_free(self.0.cast()) };
+        }
+    }
+
+    fn apply_custom_mode(geom: &mut DetoastedGeometry, mode: i32, dst_srid: i32) -> pg_sys::Datum {
+        geom.make_writable();
         let mut out_ptr: *mut u8 = ptr::null_mut();
         let mut out_len = 0usize;
         let rc = unsafe {
             pgct_transform_gserialized(
-                detoasted.cast::<u8>(),
+                geom.ptr.cast::<u8>(),
                 mode,
                 dst_srid,
                 &mut out_ptr,
@@ -166,27 +294,21 @@ mod extension {
             )
         };
 
-        if detoasted != original {
-            unsafe { pg_sys::pfree(detoasted.cast()) };
-        }
-
+        let buffer = RttopoBuffer(out_ptr);
         if rc != 0 || out_ptr.is_null() || out_len == 0 {
             error!("librttopo transform failed, rc={rc}, len={out_len}");
         }
         if out_len > i32::MAX as usize {
-            unsafe { pgct_free(out_ptr.cast()) };
             error!("librttopo transform output too large: {out_len}");
         }
 
         let out_varlena = unsafe { pg_sys::palloc(out_len) as *mut u8 };
         if out_varlena.is_null() {
-            unsafe { pgct_free(out_ptr.cast()) };
             error!("palloc failed for transformed geometry, len={out_len}");
         }
 
         unsafe {
-            ptr::copy_nonoverlapping(out_ptr, out_varlena, out_len);
-            pgct_free(out_ptr.cast());
+            ptr::copy_nonoverlapping(buffer.0, out_varlena, out_len);
             pg_sys::SET_VARSIZE!(out_varlena.cast::<pg_sys::varlena>(), out_len as i32);
         }
 
@@ -202,8 +324,19 @@ mod extension {
         {
             error!("ST_EvilTransform requires a PostGIS geometry");
         }
-        let input = geom.datum();
-        let src_srid = gserialized_get_srid(input);
+        let result = transform_integer(geom.datum(), dst_srid, &fns);
+        geometry_result(result, geom.oid())
+    }
+
+    fn free_intermediate(input: pg_sys::Datum, intermediate: pg_sys::Datum, result: pg_sys::Datum) {
+        if intermediate != input && intermediate != result {
+            unsafe { pg_sys::pfree(intermediate.cast_mut_ptr()) };
+        }
+    }
+
+    fn transform_integer(input: pg_sys::Datum, dst_srid: i32, fns: &PostgisFns) -> pg_sys::Datum {
+        let mut geometry = DetoastedGeometry::new(input);
+        let src_srid = geometry.srid();
 
         let result = if src_srid == dst_srid {
             input
@@ -214,22 +347,26 @@ mod extension {
         {
             unsafe { call2(fns.st_transform_geom_int, input, dst_srid.into()) }
         } else if src_srid == SRID_GCJ02 && dst_srid == SRID_BD09 {
-            apply_custom_mode(input, MODE_GCJ2BD, SRID_BD09)
+            apply_custom_mode(&mut geometry, MODE_GCJ2BD, SRID_BD09)
         } else if src_srid == SRID_BD09 && dst_srid == SRID_GCJ02 {
-            apply_custom_mode(input, MODE_BD2GCJ, SRID_GCJ02)
+            apply_custom_mode(&mut geometry, MODE_BD2GCJ, SRID_GCJ02)
         } else if src_srid == SRID_GCJ02 {
-            let wgs = apply_custom_mode(input, MODE_GCJ2WGS, SRID_WGS84);
+            let wgs = apply_custom_mode(&mut geometry, MODE_GCJ2WGS, SRID_WGS84);
             if dst_srid == SRID_WGS84 {
                 wgs
             } else {
-                unsafe { call2(fns.st_transform_geom_int, wgs, dst_srid.into()) }
+                let result = unsafe { call2(fns.st_transform_geom_int, wgs, dst_srid.into()) };
+                free_intermediate(input, wgs, result);
+                result
             }
         } else if src_srid == SRID_BD09 {
-            let wgs = apply_custom_mode(input, MODE_BD2WGS, SRID_WGS84);
+            let wgs = apply_custom_mode(&mut geometry, MODE_BD2WGS, SRID_WGS84);
             if dst_srid == SRID_WGS84 {
                 wgs
             } else {
-                unsafe { call2(fns.st_transform_geom_int, wgs, dst_srid.into()) }
+                let result = unsafe { call2(fns.st_transform_geom_int, wgs, dst_srid.into()) };
+                free_intermediate(input, wgs, result);
+                result
             }
         } else if dst_srid == SRID_GCJ02 {
             let wgs = if src_srid == SRID_WGS84 {
@@ -237,20 +374,151 @@ mod extension {
             } else {
                 unsafe { call2(fns.st_transform_geom_int, input, SRID_WGS84.into()) }
             };
-            apply_custom_mode(wgs, MODE_WGS2GCJ, SRID_GCJ02)
+            let result = if wgs == input {
+                apply_custom_mode(&mut geometry, MODE_WGS2GCJ, SRID_GCJ02)
+            } else {
+                apply_custom_mode(&mut DetoastedGeometry::new(wgs), MODE_WGS2GCJ, SRID_GCJ02)
+            };
+            free_intermediate(input, wgs, result);
+            result
         } else if dst_srid == SRID_BD09 {
             let wgs = if src_srid == SRID_WGS84 {
                 input
             } else {
                 unsafe { call2(fns.st_transform_geom_int, input, SRID_WGS84.into()) }
             };
-            apply_custom_mode(wgs, MODE_WGS2BD, SRID_BD09)
+            let result = if wgs == input {
+                apply_custom_mode(&mut geometry, MODE_WGS2BD, SRID_BD09)
+            } else {
+                apply_custom_mode(&mut DetoastedGeometry::new(wgs), MODE_WGS2BD, SRID_BD09)
+            };
+            free_intermediate(input, wgs, result);
+            result
         } else {
             unsafe { call2(fns.st_transform_geom_int, input, dst_srid.into()) }
         };
 
-        unsafe { <AnyElement as FromDatum>::from_polymorphic_datum(result, false, geom.oid()) }
+        geometry.finish(result)
+    }
+
+    fn geometry_result(result: pg_sys::Datum, oid: pg_sys::Oid) -> AnyElement {
+        unsafe { <AnyElement as FromDatum>::from_polymorphic_datum(result, false, oid) }
             .unwrap_or_else(|| error!("failed to build transformed geometry datum"))
+    }
+
+    fn custom_srid(spec: &str) -> Option<i32> {
+        match spec.trim().to_ascii_uppercase().as_str() {
+            "990001" | "EPSG:990001" | "GCJ02" | "GCJ-02" => Some(SRID_GCJ02),
+            "990002" | "EPSG:990002" | "BD09" | "BD-09" => Some(SRID_BD09),
+            "4490" | "EPSG:4490" | "CGCS2000" | "CGCS-2000" => Some(4490),
+            _ => None,
+        }
+    }
+
+    fn transform_text(
+        input: pg_sys::Datum,
+        to_proj: &str,
+        fns: &PostgisFns,
+    ) -> Option<pg_sys::Datum> {
+        if let Some(dst) = custom_srid(to_proj) {
+            return Some(transform_integer(input, dst, fns));
+        }
+        let geometry = DetoastedGeometry::new(input);
+        let source = geometry.srid();
+        let wgs = if matches!(source, SRID_GCJ02 | SRID_BD09) {
+            transform_integer(input, SRID_WGS84, fns)
+        } else {
+            input
+        };
+        let result = call_nullable(
+            fns.st_transform_geom_text,
+            &[wgs, to_proj.into_datum().unwrap()],
+        );
+        free_intermediate(input, wgs, result.unwrap_or(pg_sys::Datum::from(0usize)));
+        result.map(|result| geometry.finish(result))
+    }
+
+    #[pg_extern(sql = r#"
+        CREATE FUNCTION st_eviltransform(geom geometry, to_proj text) RETURNS geometry
+        LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE
+        AS 'MODULE_PATHNAME', '@FUNCTION_NAME@';
+    "#)]
+    fn st_eviltransform_text(geom: AnyElement, to_proj: &str) -> Option<AnyElement> {
+        let fns = postgis_fns();
+        transform_text(geom.datum(), to_proj, &fns)
+            .map(|result| geometry_result(result, fns.geometry_oid))
+    }
+
+    #[pg_extern(sql = r#"
+        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_srid integer) RETURNS geometry
+        LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE
+        AS 'MODULE_PATHNAME', '@FUNCTION_NAME@';
+    "#)]
+    fn st_eviltransform_from_text_integer(
+        geom: AnyElement,
+        from_proj: &str,
+        to_srid: i32,
+    ) -> Option<AnyElement> {
+        let fns = postgis_fns();
+        let input = geom.datum();
+        let from = from_proj.into_datum().unwrap();
+        let result = if let Some(src) = custom_srid(from_proj) {
+            let relabeled = unsafe { call2(fns.st_setsrid, input, src.into()) };
+            let result = transform_integer(relabeled, to_srid, &fns);
+            free_intermediate(input, relabeled, result);
+            Some(result)
+        } else if matches!(to_srid, SRID_GCJ02 | SRID_BD09) {
+            let wgs = call_nullable(
+                fns.st_transform_geom_text_int,
+                &[input, from, SRID_WGS84.into()],
+            )?;
+            let result = transform_integer(wgs, to_srid, &fns);
+            free_intermediate(input, wgs, result);
+            Some(result)
+        } else {
+            call_nullable(
+                fns.st_transform_geom_text_int,
+                &[input, from, to_srid.into()],
+            )
+        };
+        result.map(|result| geometry_result(result, fns.geometry_oid))
+    }
+
+    #[pg_extern(sql = r#"
+        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_proj text) RETURNS geometry
+        LANGUAGE c IMMUTABLE STRICT PARALLEL SAFE
+        AS 'MODULE_PATHNAME', '@FUNCTION_NAME@';
+    "#)]
+    fn st_eviltransform_from_text(
+        geom: AnyElement,
+        from_proj: &str,
+        to_proj: &str,
+    ) -> Option<AnyElement> {
+        if let Some(dst) = custom_srid(to_proj) {
+            return st_eviltransform_from_text_integer(geom, from_proj, dst);
+        }
+        let fns = postgis_fns();
+        let input = geom.datum();
+        let result = if let Some(src) = custom_srid(from_proj) {
+            let relabeled = unsafe { call2(fns.st_setsrid, input, src.into()) };
+            let result = transform_text(relabeled, to_proj, &fns);
+            free_intermediate(
+                input,
+                relabeled,
+                result.unwrap_or(pg_sys::Datum::from(0usize)),
+            );
+            result
+        } else {
+            call_nullable(
+                fns.st_transform_geom_text_text,
+                &[
+                    input,
+                    from_proj.into_datum().unwrap(),
+                    to_proj.into_datum().unwrap(),
+                ],
+            )
+        };
+        result.map(|result| geometry_result(result, fns.geometry_oid))
     }
 
     fn values_to_jenks<I>(values: I, breaks: i32, invert: bool) -> Option<Vec<f64>>
@@ -271,21 +539,22 @@ mod extension {
         }
     }
 
-    fn collect_array_values<T, F>(values: Vec<Option<T>>, convert: F) -> impl Iterator<Item = f64>
+    fn collect_array_values<T, I, F>(values: I, convert: F) -> impl Iterator<Item = f64>
     where
+        I: IntoIterator<Item = Option<T>>,
         F: Fn(T) -> f64,
     {
         values.into_iter().flatten().map(convert)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_float8_array(values: Vec<Option<f64>>, breaks: i32) -> Option<Vec<f64>> {
+    fn st_jenksbins_float8_array(values: Array<'_, f64>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_float8_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_float8_array_invert(
-        values: Vec<Option<f64>>,
+        values: Array<'_, f64>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -293,13 +562,13 @@ mod extension {
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_float4_array(values: Vec<Option<f32>>, breaks: i32) -> Option<Vec<f64>> {
+    fn st_jenksbins_float4_array(values: Array<'_, f32>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_float4_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_float4_array_invert(
-        values: Vec<Option<f32>>,
+        values: Array<'_, f32>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -311,13 +580,13 @@ mod extension {
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_int8_array(values: Vec<Option<i64>>, breaks: i32) -> Option<Vec<f64>> {
+    fn st_jenksbins_int8_array(values: Array<'_, i64>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_int8_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_int8_array_invert(
-        values: Vec<Option<i64>>,
+        values: Array<'_, i64>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -329,13 +598,13 @@ mod extension {
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_int4_array(values: Vec<Option<i32>>, breaks: i32) -> Option<Vec<f64>> {
+    fn st_jenksbins_int4_array(values: Array<'_, i32>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_int4_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_int4_array_invert(
-        values: Vec<Option<i32>>,
+        values: Array<'_, i32>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -347,13 +616,13 @@ mod extension {
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_int2_array(values: Vec<Option<i16>>, breaks: i32) -> Option<Vec<f64>> {
+    fn st_jenksbins_int2_array(values: Array<'_, i16>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_int2_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_int2_array_invert(
-        values: Vec<Option<i16>>,
+        values: Array<'_, i16>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -365,16 +634,13 @@ mod extension {
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
-    fn st_jenksbins_numeric_array(
-        values: Vec<Option<AnyNumeric>>,
-        breaks: i32,
-    ) -> Option<Vec<f64>> {
+    fn st_jenksbins_numeric_array(values: Array<'_, AnyNumeric>, breaks: i32) -> Option<Vec<f64>> {
         st_jenksbins_numeric_array_invert(values, breaks, false)
     }
 
     #[pg_extern(immutable, parallel_safe, name = "st_jenksbins")]
     fn st_jenksbins_numeric_array_invert(
-        values: Vec<Option<AnyNumeric>>,
+        values: Array<'_, AnyNumeric>,
         breaks: i32,
         invert: bool,
     ) -> Option<Vec<f64>> {
@@ -565,69 +831,6 @@ mod extension {
         END;
         $$;
 
-        CREATE FUNCTION st_eviltransform(geom geometry, to_proj text)
-        RETURNS geometry
-        LANGUAGE SQL
-        IMMUTABLE STRICT PARALLEL SAFE
-        AS $$
-        WITH params AS (
-          SELECT
-            geom,
-            ST_SRID(geom) AS src_srid,
-            eviltransform_internal.__parse_custom_srid(to_proj) AS dst_custom
-        )
-        SELECT CASE
-          WHEN dst_custom IS NOT NULL THEN st_eviltransform(geom, dst_custom)
-          WHEN src_srid IN (990001, 990002)
-            THEN ST_Transform(st_eviltransform(geom, 4326), to_proj)
-          ELSE ST_Transform(geom, to_proj)
-        END
-        FROM params;
-        $$;
-
-        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_srid integer)
-        RETURNS geometry
-        LANGUAGE SQL
-        IMMUTABLE STRICT PARALLEL SAFE
-        AS $$
-        WITH params AS (
-          SELECT
-            geom,
-            to_srid AS dst_srid,
-            eviltransform_internal.__parse_custom_srid(from_proj) AS src_custom
-        )
-        SELECT CASE
-          WHEN src_custom IS NULL AND dst_srid NOT IN (990001, 990002)
-            THEN ST_Transform(geom, from_proj, dst_srid)
-          WHEN src_custom IS NOT NULL
-            THEN st_eviltransform(ST_SetSRID(geom, src_custom), dst_srid)
-          ELSE st_eviltransform(ST_Transform(geom, from_proj, 4326), dst_srid)
-        END
-        FROM params;
-        $$;
-
-        CREATE FUNCTION st_eviltransform(geom geometry, from_proj text, to_proj text)
-        RETURNS geometry
-        LANGUAGE SQL
-        IMMUTABLE STRICT PARALLEL SAFE
-        AS $$
-        WITH params AS (
-          SELECT
-            geom,
-            eviltransform_internal.__parse_custom_srid(from_proj) AS src_custom,
-            eviltransform_internal.__parse_custom_srid(to_proj) AS dst_custom
-        )
-        SELECT CASE
-          WHEN src_custom IS NULL AND dst_custom IS NULL
-            THEN ST_Transform(geom, from_proj, to_proj)
-          WHEN src_custom IS NOT NULL AND dst_custom IS NOT NULL
-            THEN st_eviltransform(ST_SetSRID(geom, src_custom), dst_custom)
-          WHEN src_custom IS NOT NULL
-            THEN ST_Transform(st_eviltransform(ST_SetSRID(geom, src_custom), 4326), to_proj)
-          ELSE st_eviltransform(ST_Transform(geom, from_proj, 4326), dst_custom)
-        END
-        FROM params;
-        $$;
         "#,
         name = "st_eviltransform_sql",
         requires = [st_eviltransform_integer, st_eviltransform_ewkb_internal]
@@ -742,6 +945,22 @@ mod extension {
 
         #[pg_test]
         fn test_source_geometry_not_mutated() {
+            Spi::run(
+                "DO $$
+                DECLARE source geometry := 'SRID=4326;POINT(120 30)'::geometry;
+                        first geometry;
+                        second geometry;
+                BEGIN
+                  first := ST_EvilTransform(source, 990001);
+                  second := ST_EvilTransform(source, 990001);
+                  IF ST_X(source) <> 120 OR ST_Y(source) <> 30
+                    OR abs(ST_X(first) - 120.004660445597) > 1e-6
+                    OR abs(ST_X(second) - 120.004660445597) > 1e-6 THEN
+                    RAISE EXCEPTION 'custom transform mutated borrowed input';
+                  END IF;
+                END $$",
+            )
+            .unwrap();
             Spi::run(&format!(
                 "CREATE TEMP TABLE t AS SELECT ST_SetSRID('POINT(120 30)'::geometry, {}) AS g",
                 super::SRID_WGS84
@@ -759,6 +978,88 @@ mod extension {
                 .expect("no original geometry");
 
             assert_eq!(original, "POINT(120 30)");
+        }
+
+        #[pg_test]
+        fn test_transformed_bbox_and_ordinates() {
+            Spi::run(
+                "DO $$
+                DECLARE wkt text; source geometry; output geometry; pair record;
+                BEGIN
+                  FOREACH wkt IN ARRAY ARRAY[
+                    'POINT(120 30)', 'POINT Z(120 30 7)',
+                    'POINT M(120 30 8)', 'POINT ZM(120 30 7 8)',
+                    'LINESTRING(120 30,121 31)',
+                    'LINESTRING Z(120 30 7,121 31 9)',
+                    'LINESTRING M(120 30 8,121 31 10)',
+                    'LINESTRING ZM(120 30 7 8,121 31 9 10)',
+                    'POINT EMPTY', 'LINESTRING EMPTY',
+                    'MULTILINESTRING((120 30,121 31),(122 32,123 33))',
+                    'GEOMETRYCOLLECTION(POINT(120 30),LINESTRING(121 31,122 32))'
+                  ] LOOP
+                    source := ST_GeomFromText(wkt, 4326);
+                    output := ST_EvilTransform(source, 990001);
+                    IF ST_GeometryType(output) <> ST_GeometryType(source)
+                       OR ST_Zmflag(output) <> ST_Zmflag(source)
+                       OR ST_NPoints(output) <> ST_NPoints(source)
+                       OR ST_IsEmpty(output) <> ST_IsEmpty(source)
+                       OR ST_SRID(output) <> 990001 THEN
+                      RAISE EXCEPTION 'geometry structure changed: %', wkt;
+                    END IF;
+                    FOR pair IN
+                      SELECT a.geom original, b.geom transformed
+                      FROM ST_DumpPoints(source) a JOIN ST_DumpPoints(output) b USING (path)
+                    LOOP
+                      IF ST_Z(pair.original) IS DISTINCT FROM ST_Z(pair.transformed)
+                         OR ST_M(pair.original) IS DISTINCT FROM ST_M(pair.transformed)
+                         OR NOT (output && pair.transformed)
+                         OR NOT (output &&& pair.transformed) THEN
+                        RAISE EXCEPTION 'ordinates or cached bounds changed: %', wkt;
+                      END IF;
+                    END LOOP;
+                  END LOOP;
+                END $$",
+            )
+            .unwrap();
+            assert_eq!(Spi::get_one::<bool>(
+                "WITH transformed AS (SELECT ST_EvilTransform('SRID=4326;LINESTRING ZM (120 30 7 8,121 31 9 10)'::geometry, 990001) AS g)
+                 SELECT ST_Covers(ST_Envelope(g), ST_Force2D(g))
+                   AND ST_XMin(g::box3d) > 120.004
+                   AND ST_Z(ST_StartPoint(g)) = 7 AND ST_M(ST_EndPoint(g)) = 10
+                   AND ST_SRID(g) = 990001 FROM transformed"
+            ).unwrap(), Some(true));
+        }
+
+        #[pg_test]
+        fn test_explicit_source_overrides_geometry_srid() {
+            for sql in [
+                "SELECT abs(ST_X(g) - 120.004660445597) < 1e-6 AND ST_SRID(g) = 990001 FROM (SELECT ST_EvilTransform('SRID=3857;POINT(120 30)'::geometry, 'EPSG:4326', 990001) AS g) t",
+                "SELECT ST_X(g) = 120 AND ST_Y(g) = 30 AND ST_SRID(g) = 990001 FROM (SELECT ST_EvilTransform('SRID=3857;POINT(120 30)'::geometry, 'GCJ02', 'GCJ02') AS g) t",
+                "SELECT ST_IsEmpty(ST_EvilTransform('SRID=4326;GEOMETRYCOLLECTION EMPTY'::geometry, 'BD09'))",
+                "SELECT ST_EvilTransform('POINT(120 30)'::geometry, '+proj=longlat +datum=WGS84 +no_defs') IS NULL",
+                "SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'EPSG:4326', 0) IS NULL",
+                "SELECT ST_EvilTransform(NULL::geometry, 'GCJ02') IS NULL",
+            ] {
+                assert_eq!(Spi::get_one::<bool>(sql).unwrap(), Some(true), "{sql}");
+            }
+        }
+
+        #[pg_test]
+        fn test_toasted_geometry_and_identity_lifetime() {
+            Spi::run("CREATE TEMP TABLE toasted_geometry(g geometry);
+                ALTER TABLE toasted_geometry ALTER COLUMN g SET STORAGE EXTERNAL;
+                INSERT INTO toasted_geometry SELECT ST_SetSRID(ST_MakeLine(ST_MakePoint(120 + i * 0.000001, 30 + i * 0.000001)), 4326) FROM generate_series(1, 5000) i").unwrap();
+            assert_eq!(
+                Spi::get_one::<bool>(
+                    "SELECT pg_column_size(g) > 8000
+                   AND ST_NPoints(ST_EvilTransform(g, 990001)) = 5000
+                   AND ST_AsEWKB(ST_EvilTransform(g, 4326)) = ST_AsEWKB(g)
+                   AND ST_X(ST_StartPoint(g)) = 120.000001
+                 FROM toasted_geometry"
+                )
+                .unwrap(),
+                Some(true)
+            );
         }
 
         #[pg_test]
@@ -786,6 +1087,26 @@ mod extension {
                     .expect("SPI failed")
                     .expect("no row returned");
                 assert!(got, "{sql}");
+            }
+        }
+
+        #[pg_test]
+        fn test_jenksbins_array_nulls_and_inverted_edges() {
+            for ty in [
+                "double precision",
+                "real",
+                "bigint",
+                "integer",
+                "smallint",
+                "numeric",
+            ] {
+                let sql = format!(
+                    "SELECT ST_JenksBins(NULL::{ty}[], 2) IS NULL
+                       AND ST_JenksBins(ARRAY[]::{ty}[], 2) IS NULL
+                       AND ST_JenksBins(ARRAY[NULL, NULL]::{ty}[], 2) IS NULL
+                       AND ST_JenksBins(ARRAY[1, 1, NULL, 2, 50, 51]::{ty}[], 2, true) = ARRAY[1,50]::double precision[]"
+                );
+                assert_eq!(Spi::get_one::<bool>(&sql).unwrap(), Some(true), "{sql}");
             }
         }
 

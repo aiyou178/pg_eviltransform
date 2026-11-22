@@ -62,17 +62,22 @@ CREATE EXTENSION pg_eviltransform;
 SELECT extversion FROM pg_extension WHERE extname = 'pg_eviltransform';
 ```
 
-No `shared_preload_libraries` setting is needed. Application roles can call the
-installed API; text overloads also need `USAGE` on `eviltransform_internal`.
+No `shared_preload_libraries` setting is needed. Application roles need `USAGE`
+on the extension/PostGIS schemas and `EXECUTE` on the installed API.
 
-### Upgrade from 0.0.7
+### Upgrade from earlier versions
 
-Upgrade PostgreSQL to a supported minor version and install the matching 0.0.8
+Upgrade PostgreSQL to a supported minor version and install the matching 0.0.9
 package. Reconnect to the database, then run:
 
 ```sql
-ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.8';
+ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.9';
 ```
+
+Version 0.0.9 fixes cached geometry bounds that could reject valid spatial
+matches. Recompute stored custom-transform results from the original geometries,
+refresh affected materialized views, and rebuild expression indexes using these transforms. Updating the
+library alone does not repair previously stored results or index entries.
 
 ## Usage
 
@@ -110,6 +115,13 @@ SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS2000', 990001);
 Standard systems delegate to PostGIS/PROJ; custom systems bridge through WGS84
 when needed. CGCS2000 aliases mean geographic EPSG:4490; projected Gauss-Kruger
 zones require their own explicit EPSG codes.
+
+An explicit `from_proj` overrides the geometry's SRID without first converting
+its coordinates, just as in PostGIS. Custom transforms preserve Z/M ordinates;
+outside the China bounding box (72.004-137.8347 E, 0.8293-55.8271 N), native
+GCJ02/BD09 steps leave X/Y unchanged. Text aliases ignore case and surrounding spaces.
+All overloads resolve PostGIS in its owning schema; callers can use qualified
+extension functions with a restricted `search_path`.
 
 ### Jenks natural breaks
 
@@ -164,6 +176,9 @@ PGDATABASE=bench ROWS=100000 DISTINCT_VALUES=1000 BREAKS=7 WORK_MEM=8MB \
 ```
 
 ## Development
+
+See the [specification and audit decisions](doc/spec.md) and
+[0.0.9 benchmark comparison](doc/benchmarks/2026-11-22-spec-audit.md).
 
 Use Rust **1.99.1**, cargo-pgrx **0.20.0**, matching Clang/libclang/LLVM majors,
 PostgreSQL server headers, PostGIS, and ICU/GEOS/librttopo development libraries.

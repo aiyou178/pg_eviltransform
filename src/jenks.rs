@@ -155,7 +155,11 @@ fn weighted_jenks_edges(
         *cost = range_variance(&prefix_weight, &prefix_sum, &prefix_sum_sq, 0, i);
     }
 
-    let mut splits = vec![vec![0usize; n + 1]; class_count + 1];
+    let stride = n + 1;
+    let split_count = (class_count + 1)
+        .checked_mul(stride)
+        .ok_or(JenksError::Internal("Jenks split matrix is too large"))?;
+    let mut splits = vec![0usize; split_count];
     for class_idx in 2..=class_count {
         dp_cur.fill(f64::INFINITY);
         compute_dp_row(
@@ -166,7 +170,7 @@ fn weighted_jenks_edges(
             n - 1,
             &dp_prev,
             &mut dp_cur,
-            &mut splits[class_idx],
+            &mut splits[class_idx * stride..(class_idx + 1) * stride],
             &prefix_weight,
             &prefix_sum,
             &prefix_sum_sq,
@@ -177,7 +181,7 @@ fn weighted_jenks_edges(
     let mut ranges = Vec::with_capacity(class_count);
     let mut end = n;
     for class_idx in (2..=class_count).rev() {
-        let split = splits[class_idx][end];
+        let split = splits[class_idx * stride + end];
         if split >= end {
             return Err(JenksError::Internal("failed to reconstruct Jenks classes"));
         }
@@ -187,11 +191,10 @@ fn weighted_jenks_edges(
     ranges.push((0, end));
     ranges.reverse();
 
-    Ok(edges_from_ranges(
-        &values.iter().map(|(value, _)| *value).collect::<Vec<_>>(),
-        &ranges,
-        invert,
-    ))
+    Ok(ranges
+        .iter()
+        .map(|(start, end)| values[if invert { *start } else { end - 1 }].0)
+        .collect())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -304,6 +307,9 @@ mod tests {
     fn duplicate_heavy_inputs_are_weighted() {
         let values = [1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 50.0, 50.0, 51.0, 51.0, 51.0];
         assert_eq!(unwrap_breaks(&values, 2, false), vec![2.0, 51.0]);
+        assert_eq!(unwrap_breaks(&values, 2, true), vec![1.0, 50.0]);
+        assert_eq!(unwrap_breaks(&values, 1, false), vec![51.0]);
+        assert_eq!(unwrap_breaks(&values, 3, true), vec![1.0, 2.0, 50.0]);
     }
 
     #[test]

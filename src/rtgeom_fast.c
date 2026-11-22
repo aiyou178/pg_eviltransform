@@ -176,6 +176,69 @@ int pgct_gserialized_get_srid(const uint8_t* input, int32_t* out_srid) {
   return 0;
 }
 
+static int transform_pointarray(const RTCTX* ctx, RTPOINTARRAY* points, int mode) {
+  for (int i = 0; i < points->npoints; i++) {
+    RTPOINT4D point;
+    double out_lat;
+    double out_lng;
+    if (rt_getPoint4d_p(ctx, points, i, &point) != RT_SUCCESS) {
+      return 4;
+    }
+    apply_mode(mode, point.y, point.x, &out_lat, &out_lng);
+    point.x = out_lng;
+    point.y = out_lat;
+    ptarray_set_point4d(ctx, points, i, &point);
+  }
+  return 0;
+}
+
+static int transform_coordinates(const RTCTX* ctx, RTGEOM* geom, int mode) {
+  RTPOINTARRAY* points = NULL;
+  RTPOINTITERATOR* iter = NULL;
+
+  /* Simple Cartesian geometries need no iterator stack. Keep library point
+   * accessors for alignment and Z/M handling, and the generic path otherwise. */
+  if (!RTFLAGS_GET_GEODETIC(geom->flags)) {
+    if (geom->type == RTPOINTTYPE) {
+      points = ((RTPOINT*)geom)->point;
+    } else if (geom->type == RTLINETYPE) {
+      points = ((RTLINE*)geom)->points;
+    }
+  }
+
+  if (points != NULL) {
+    return transform_pointarray(ctx, points, mode);
+  }
+
+  iter = rtpointiterator_create_rw(ctx, geom);
+  if (iter == NULL) {
+    return 3;
+  }
+
+  while (rtpointiterator_has_next(ctx, iter) == RT_TRUE) {
+    RTPOINT4D point;
+    double out_lat;
+    double out_lng;
+
+    if (rtpointiterator_peek(ctx, iter, &point) != RT_SUCCESS) {
+      rtpointiterator_destroy(ctx, iter);
+      return 4;
+    }
+
+    apply_mode(mode, point.y, point.x, &out_lat, &out_lng);
+    point.x = out_lng;
+    point.y = out_lat;
+
+    if (rtpointiterator_modify_next(ctx, iter, &point) != RT_SUCCESS) {
+      rtpointiterator_destroy(ctx, iter);
+      return 5;
+    }
+  }
+
+  rtpointiterator_destroy(ctx, iter);
+  return 0;
+}
+
 int pgct_transform_gserialized(const uint8_t* input,
                                int mode,
                                int32_t dst_srid,
@@ -183,7 +246,6 @@ int pgct_transform_gserialized(const uint8_t* input,
                                size_t* out_len) {
   RTCTX* ctx = pgct_ctx();
   RTGEOM* geom = NULL;
-  RTPOINTITERATOR* iter = NULL;
   GSERIALIZED* out = NULL;
   size_t out_size = 0;
 
@@ -196,36 +258,17 @@ int pgct_transform_gserialized(const uint8_t* input,
     return 2;
   }
 
-  iter = rtpointiterator_create_rw(ctx, geom);
-  if (iter == NULL) {
+  int rc = transform_coordinates(ctx, geom, mode);
+  if (rc != 0) {
     rtgeom_free(ctx, geom);
-    return 3;
+    return rc;
   }
 
-  while (rtpointiterator_has_next(ctx, iter) == RT_TRUE) {
-    RTPOINT4D point;
-    double out_lat;
-    double out_lng;
-
-    if (rtpointiterator_peek(ctx, iter, &point) != RT_SUCCESS) {
-      rtpointiterator_destroy(ctx, iter);
-      rtgeom_free(ctx, geom);
-      return 4;
-    }
-
-    apply_mode(mode, point.y, point.x, &out_lat, &out_lng);
-    point.x = out_lng;
-    point.y = out_lat;
-
-    if (rtpointiterator_modify_next(ctx, iter, &point) != RT_SUCCESS) {
-      rtpointiterator_destroy(ctx, iter);
-      rtgeom_free(ctx, geom);
-      return 5;
-    }
+  /* The deserialized box still describes the input coordinates. */
+  if (geom->bbox != NULL) {
+    rtgeom_drop_bbox(ctx, geom);
+    rtgeom_add_bbox(ctx, geom);
   }
-
-  rtpointiterator_destroy(ctx, iter);
-  iter = NULL;
 
   out = gserialized_from_rtgeom(
       ctx,
