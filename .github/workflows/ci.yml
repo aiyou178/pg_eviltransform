@@ -72,15 +72,14 @@ jobs:
             base_image: postgres:18.7-trixie
             arch: arm64
             runner: ubuntu-24.04-arm
-          # Install PG19 packages on a base available for both architectures.
-          - pg_label: pg19-rc
+          - pg_label: pg19
             pg_major: "19"
-            base_image: postgres:18.7-trixie
+            base_image: postgres:19.0-trixie
             arch: amd64
             runner: ubuntu-24.04
-          - pg_label: pg19-rc
+          - pg_label: pg19
             pg_major: "19"
-            base_image: postgres:18.7-trixie
+            base_image: postgres:19.0-trixie
             arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}

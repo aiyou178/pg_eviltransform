@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Release build image for pg_eviltransform packages on Debian trixie (PG15-19).
-ARG BASE_IMAGE=postgres:18.7-trixie
+ARG BASE_IMAGE=postgres:19.0-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -20,7 +20,6 @@ ENV PATH=/root/.cargo/bin:$PATH \
 
 RUN set -eux; \
   sed -i 's|http://apt.postgresql.org|https://apt.postgresql.org|g' /etc/apt/sources.list.d/pgdg.list; \
-  sed -i '/trixie-pgdg/ s/$/ 19/' /etc/apt/sources.list.d/pgdg.list; \
   if [ -n "$DEBIAN_MIRROR" ]; then \
     find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
       sed -i \

@@ -20,12 +20,12 @@ major version are supported:
 | 16 | 16.16+ |
 | 17 | 17.12+ |
 | 18 | 18.7+ |
-| 19 | 19rc2, experimental |
+| 19 | 19.0+ |
 
 These are compatibility requirements, not just CI test versions. Current
 builds use the patched PostgreSQL headers required for pgrx 0.20.0's composite
 datum security fix (CVE-2026-6460); binaries built against those headers cannot
-load on earlier minor releases. PG19 support is experimental and targets 19rc2.
+load on earlier minor releases. PG19 builds and tests use PostgreSQL 19.0 GA.
 PG14 is no longer supported by current source builds. Binary availability is
 release-specific: the [pgext.cloud catalog](https://pgext.cloud/ext/pg_eviltransform)
 currently lists older 0.0.7 / pgrx 0.19.3 packages for PG14-18. Check its
@@ -134,29 +134,31 @@ values are returned. Numeric inputs are computed as finite f64 values.
 
 Local ARM64, pgrx 0.20.0, PostGIS 3.7.0, JIT/parallel query off;
 median of five runs after one warm-up. Coordinate tests use 200,000 points.
+PG18.7 results were recorded on 2026-11-13; PG19.0 results on 2026-11-22.
 
 | PostgreSQL | Conversion | Native | Regex SQL |
 | --- | --- | ---: | ---: |
 | 18.7 | 4326 -> GCJ02 | 120.61 ms | 5546.00 ms |
 | 18.7 | 4326 -> BD09 -> 3857 | 320.75 ms | 15343.10 ms |
-| 19rc2 | 4326 -> GCJ02 | 117.47 ms | 5457.14 ms |
-| 19rc2 | 4326 -> BD09 -> 3857 | 321.29 ms | 14996.98 ms |
+| 19.0 | 4326 -> GCJ02 | 123.45 ms | 5506.07 ms |
+| 19.0 | 4326 -> BD09 -> 3857 | 325.74 ms | 15527.00 ms |
 
 Jenks: 100,000 rows, 1,000 distinct values, 7 classes, work_mem=8MB:
 
 | PostgreSQL | Rust array | Rust aggregate | CartoDB SQL |
 | --- | ---: | ---: | ---: |
 | 18.7 | 10.49 ms | 9.11 ms | 84.07 ms |
-| 19rc2 | 9.25 ms | 8.36 ms | 82.90 ms |
+| 19.0 | 10.09 ms | 9.07 ms | 85.62 ms |
 
-The [full report](doc/benchmarks/2026-11-13-pgrx-0.20.0.md) includes before/after
-comparisons, timing ranges and differences between the SQL baselines
-and native functions. Results depend on the workload and host.
+The [pgrx upgrade report](doc/benchmarks/2026-11-13-pgrx-0.20.0.md) and
+[PG19 GA report](doc/benchmarks/2026-11-22-pg19-ga.md) describe the methodology,
+timing ranges and SQL/native differences. Results depend on the workload and
+host; the historical RC2 and current GA runs are not a controlled comparison.
 
 Reproduce in a disposable database (the scripts recreate benchmark tables):
 
 ```bash
-PGDATABASE=bench ROWS=200000 PG_MAJOR=18 scripts/benchmark_pg18.sh /tmp/coordinates.txt
+PGDATABASE=bench ROWS=200000 PG_MAJOR=19 scripts/benchmark_pg18.sh /tmp/coordinates.txt
 PGDATABASE=bench ROWS=100000 DISTINCT_VALUES=1000 BREAKS=7 WORK_MEM=8MB \
   scripts/benchmark_jenksbins.sh /tmp/jenks.txt
 ```
@@ -170,18 +172,19 @@ See the [benchmark Dockerfile](docker/Dockerfile.benchmark-trixie) for Debian de
 ```bash
 rustup toolchain install 1.99.1 --profile minimal
 cargo install --locked cargo-pgrx --version 0.20.0
-cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
+cargo pgrx init --pg19=/usr/lib/postgresql/19/bin/pg_config
 cargo test --locked --lib
-cargo pgrx package --release --no-default-features --features pg18 \
-  --pg-config /usr/lib/postgresql/18/bin/pg_config
-cargo pgrx test pg18 --release --no-default-features --features pg_test
+cargo pgrx package --release --no-default-features --features pg19 \
+  --pg-config /usr/lib/postgresql/19/bin/pg_config
+cargo pgrx test pg19 --release --no-default-features --features pg_test
 ```
 
-Replace `pg18` and the header path for other majors. Distro PostgreSQL tests
+Replace `pg19` and the header path for other majors. Distro PostgreSQL tests
 need permission to install extension files; root/container runs should add
 `--runas postgres --pgdata /tmp/pg-eviltransform-tests` to the test command.
 
 The CI matrix builds, tests and benchmarks **PG15-19 on amd64 and arm64**.
+The benchmark and release Docker builders default to `postgres:19.0-trixie`.
 Release builds use portable CPU targets, `opt-level=3`, fat LTO and C `-O3`.
 
 ```bash
