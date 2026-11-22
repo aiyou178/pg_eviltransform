@@ -249,7 +249,12 @@ BEGIN
     SELECT * INTO transformed
     FROM regex_eviltransform_internal.__apply_scalar(ST_X(input_geometry), ST_Y(input_geometry), mode);
 
-    RETURN ST_SetSRID(ST_MakePoint(transformed.lng, transformed.lat), output_srid);
+    RETURN ST_SetSRID(CASE ST_Zmflag(input_geometry)
+      WHEN 3 THEN ST_MakePoint(transformed.lng, transformed.lat, ST_Z(input_geometry), ST_M(input_geometry))
+      WHEN 2 THEN ST_MakePoint(transformed.lng, transformed.lat, ST_Z(input_geometry))
+      WHEN 1 THEN ST_MakePointM(transformed.lng, transformed.lat, ST_M(input_geometry))
+      ELSE ST_MakePoint(transformed.lng, transformed.lat)
+    END, output_srid);
   END IF;
 
   wkt_template := ST_AsText(input_geometry);
@@ -268,6 +273,12 @@ BEGIN
     FROM regex_eviltransform_internal.__apply_scalar(ST_X(item.geom), ST_Y(item.geom), mode);
 
     points := points || transformed.lng || transformed.lat;
+    IF ST_Zmflag(item.geom) IN (2, 3) THEN
+      points := points || ST_Z(item.geom);
+    END IF;
+    IF ST_Zmflag(item.geom) IN (1, 3) THEN
+      points := points || ST_M(item.geom);
+    END IF;
   END LOOP;
 
   RETURN ST_SetSRID(ST_GeomFromText(format(wkt_template, variadic points)), output_srid);

@@ -60,17 +60,21 @@ CREATE EXTENSION pg_eviltransform;
 SELECT extversion FROM pg_extension WHERE extname = 'pg_eviltransform';
 ```
 
-无须配置 `shared_preload_libraries`。应用角色可以调用已安装的 API；
-文本重载还需要对 `eviltransform_internal` schema 拥有 `USAGE` 权限。
+无须配置 `shared_preload_libraries`。应用角色需要对扩展及 PostGIS 所属 schema
+拥有 `USAGE` 权限，并对已安装的 API 拥有 `EXECUTE` 权限。
 
-### 从 0.0.7 升级
+### 从旧版本升级
 
-先将 PostgreSQL 升级到受支持的小版本，并安装匹配的 0.0.8 软件包。
+先将 PostgreSQL 升级到受支持的小版本，并安装匹配的 0.0.9 软件包。
 重新连接数据库后执行：
 
 ```sql
-ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.8';
+ALTER EXTENSION pg_eviltransform UPDATE TO '0.0.9';
 ```
+
+0.0.9 修复了几何边界框缓存可能导致空间查询漏匹配的问题。升级后请重新计算
+已存储的自定义转换结果（使用原始几何）、刷新相关物化视图，并重建使用这些转换的表达式索引。
+仅更新动态库不会修复已存储的结果或索引项。
 
 ## 用法
 
@@ -107,6 +111,12 @@ SELECT ST_EvilTransform('POINT(120 30)'::geometry, 'CGCS2000', 990001);
 
 标准坐标系委托给 PostGIS/PROJ；自定义坐标系在需要时通过 WGS84 桥接。
 CGCS2000 别名表示地理坐标系 EPSG:4490，高斯-克吕格投影分带应使用对应的明确 EPSG 编号。
+
+显式指定 `from_proj` 会覆盖几何的 SRID，不会先转换其坐标，与 PostGIS 的语义一致。
+自定义转换保留 Z/M；在中国边界框（东经 72.004-137.8347、北纬 0.8293-55.8271）
+之外，原生 GCJ02/BD09 步骤不改变 X/Y。文本别名忽略大小写和首尾空格。
+所有重载都从 PostGIS 所属 schema 解析函数；调用者可在受限 `search_path` 下使用
+带 schema 限定的扩展函数。
 
 ### Jenks 自然断点
 
@@ -159,6 +169,9 @@ PGDATABASE=bench ROWS=100000 DISTINCT_VALUES=1000 BREAKS=7 WORK_MEM=8MB \
 ```
 
 ## 开发
+
+实现约定与审计处理见[规范](doc/spec.md)，性能取舍见
+[0.0.9 基准对比](doc/benchmarks/2026-11-22-spec-audit.md)。
 
 工具链：Rust **1.99.1**、cargo-pgrx **0.20.0**、主版本一致的 Clang/libclang/LLVM，
 以及 PostgreSQL 服务器头文件、PostGIS、ICU、GEOS 和 librttopo 开发库。
