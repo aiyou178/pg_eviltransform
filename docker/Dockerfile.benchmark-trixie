@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1.7
 # Minimal image for pg_eviltransform benchmark on Debian trixie.
-ARG BASE_IMAGE=postgres:18.7-trixie
+ARG BASE_IMAGE=postgres:19.0-trixie
 FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 # Keep the build argument distinct from the base image's PG_MAJOR environment.
-ARG TARGET_PG_MAJOR=18
+ARG TARGET_PG_MAJOR=19
 ARG CARGO_PGRX_VERSION=0.20.0
 ARG RUST_TOOLCHAIN=1.99.1
 ARG DEBIAN_MIRROR=
@@ -24,9 +24,6 @@ ENV PATH=/usr/lib/postgresql/${TARGET_PG_MAJOR}/bin:/root/.cargo/bin:$PATH \
 
 RUN set -eux; \
   sed -i 's|http://apt.postgresql.org|https://apt.postgresql.org|g' /etc/apt/sources.list.d/pgdg.list; \
-  if [ "$PG_MAJOR" = "19" ]; then \
-    sed -i '/trixie-pgdg/ s/$/ 19/' /etc/apt/sources.list.d/pgdg.list; \
-  fi; \
   if [ -n "$DEBIAN_MIRROR" ]; then \
     find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
       sed -i \

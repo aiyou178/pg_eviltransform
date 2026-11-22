@@ -19,11 +19,11 @@
 | 16 | 16.16+ |
 | 17 | 17.12+ |
 | 18 | 18.7+ |
-| 19 | 19rc2，实验支持 |
+| 19 | 19.0+ |
 
 这些是兼容性要求，而非仅用于 CI 的测试版本。当前构建使用包含复合数据安全修复
 （CVE-2026-6460）的 PostgreSQL 头文件，以启用 pgrx 0.20.0 中的相应修复；
-基于这些头文件构建的二进制无法在更早的小版本上加载。PG19 以 19rc2 为实验支持目标。
+基于这些头文件构建的二进制无法在更早的小版本上加载。PG19 构建与测试使用 19.0 正式版。
 当前源码不再支持 PG14。
 二进制包的支持范围取决于发行版本：[pgext.cloud 目录](https://pgext.cloud/ext/pg_eviltransform)
 目前列出的是较早的 0.0.7 / pgrx 0.19.3 构建，覆盖 PG14-18。
@@ -130,28 +130,30 @@ SELECT ST_JenksBins(value::double precision, 7, true) FROM measurements;
 
 以下为 ARM64 本地结果：pgrx 0.20.0、PostGIS 3.7.0，关闭 JIT 和并行查询，
 预热一次后取五次运行的中位数。坐标测试使用 200,000 个点。
+PG18.7 结果记录于 2026-11-13，PG19.0 结果记录于 2026-11-22。
 
 | PostgreSQL | 转换路径 | 原生实现 | Regex SQL |
 | --- | --- | ---: | ---: |
 | 18.7 | 4326 -> GCJ02 | 120.61 ms | 5546.00 ms |
 | 18.7 | 4326 -> BD09 -> 3857 | 320.75 ms | 15343.10 ms |
-| 19rc2 | 4326 -> GCJ02 | 117.47 ms | 5457.14 ms |
-| 19rc2 | 4326 -> BD09 -> 3857 | 321.29 ms | 14996.98 ms |
+| 19.0 | 4326 -> GCJ02 | 123.45 ms | 5506.07 ms |
+| 19.0 | 4326 -> BD09 -> 3857 | 325.74 ms | 15527.00 ms |
 
 Jenks 测试使用 100,000 行、1,000 个不同值、7 类，`work_mem=8MB`：
 
 | PostgreSQL | Rust 数组 | Rust 聚合 | CartoDB SQL |
 | --- | ---: | ---: | ---: |
 | 18.7 | 10.49 ms | 9.11 ms | 84.07 ms |
-| 19rc2 | 9.25 ms | 8.36 ms | 82.90 ms |
+| 19.0 | 10.09 ms | 9.07 ms | 85.62 ms |
 
-[完整报告](doc/benchmarks/2026-11-13-pgrx-0.20.0.md)包含升级前后对比、计时范围，
-以及 SQL 基线与原生函数之间的实现差异。结果取决于负载和运行环境。
+[pgrx 升级报告](doc/benchmarks/2026-11-13-pgrx-0.20.0.md)和
+[PG19 正式版报告](doc/benchmarks/2026-11-22-pg19-ga.md)说明测试方法、计时范围及
+SQL 与原生实现的差异。结果取决于负载和运行环境，历史 RC2 与当前正式版结果并非受控对比。
 
 在临时数据库中复现（脚本会重建基准表）：
 
 ```bash
-PGDATABASE=bench ROWS=200000 PG_MAJOR=18 scripts/benchmark_pg18.sh /tmp/coordinates.txt
+PGDATABASE=bench ROWS=200000 PG_MAJOR=19 scripts/benchmark_pg18.sh /tmp/coordinates.txt
 PGDATABASE=bench ROWS=100000 DISTINCT_VALUES=1000 BREAKS=7 WORK_MEM=8MB \
   scripts/benchmark_jenksbins.sh /tmp/jenks.txt
 ```
@@ -165,18 +167,19 @@ Debian 构建环境见[基准镜像 Dockerfile](docker/Dockerfile.benchmark-trix
 ```bash
 rustup toolchain install 1.99.1 --profile minimal
 cargo install --locked cargo-pgrx --version 0.20.0
-cargo pgrx init --pg18=/usr/lib/postgresql/18/bin/pg_config
+cargo pgrx init --pg19=/usr/lib/postgresql/19/bin/pg_config
 cargo test --locked --lib
-cargo pgrx package --release --no-default-features --features pg18 \
-  --pg-config /usr/lib/postgresql/18/bin/pg_config
-cargo pgrx test pg18 --release --no-default-features --features pg_test
+cargo pgrx package --release --no-default-features --features pg19 \
+  --pg-config /usr/lib/postgresql/19/bin/pg_config
+cargo pgrx test pg19 --release --no-default-features --features pg_test
 ```
 
-使用其他主版本时，替换 `pg18` 和头文件路径。使用发行版 PostgreSQL 运行测试时，
+使用其他主版本时，替换 `pg19` 和头文件路径。使用发行版 PostgreSQL 运行测试时，
 需要有安装扩展文件的权限；以 root/容器运行时，在测试命令后添加
 `--runas postgres --pgdata /tmp/pg-eviltransform-tests`。
 
 CI 矩阵覆盖 **PG15-19、amd64 和 arm64** 的构建、测试和基准。
+基准和发布构建镜像默认使用 `postgres:19.0-trixie`。
 Release 构建保留可移植 CPU 目标，使用 `opt-level=3`、fat LTO 和 C `-O3`。
 
 ```bash
