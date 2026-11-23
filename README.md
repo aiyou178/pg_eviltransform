@@ -23,7 +23,7 @@ major version are supported:
 | 19 | 19.0+ |
 
 These are compatibility requirements, not just CI test versions. Current
-builds use the patched PostgreSQL headers required for pgrx 0.20.0's composite
+builds use the patched PostgreSQL headers required for pgrx 0.20.x's composite
 datum security fix (CVE-2026-6460); binaries built against those headers cannot
 load on earlier minor releases. PG19 builds and tests use PostgreSQL 19.0 GA.
 PG14 is no longer supported by current source builds. Binary availability is
@@ -144,28 +144,30 @@ values are returned. Numeric inputs are computed as finite f64 values.
 
 ## Benchmark
 
-Local ARM64, pgrx 0.20.0, PostGIS 3.7.0, JIT/parallel query off;
+Local ARM64, PostGIS 3.7.0, JIT/parallel query off;
 median of five runs after one warm-up. Coordinate tests use 200,000 points.
-PG18.7 results were recorded on 2026-11-13; PG19.0 results on 2026-11-22.
+PG18.7 results were recorded on 2026-11-13 (pgrx 0.20.0); PG19.0 results on
+2026-11-24 (pgrx 0.20.1).
 
 | PostgreSQL | Conversion | Native | Regex SQL |
 | --- | --- | ---: | ---: |
 | 18.7 | 4326 -> GCJ02 | 120.61 ms | 5546.00 ms |
 | 18.7 | 4326 -> BD09 -> 3857 | 320.75 ms | 15343.10 ms |
-| 19.0 | 4326 -> GCJ02 | 123.45 ms | 5506.07 ms |
-| 19.0 | 4326 -> BD09 -> 3857 | 325.74 ms | 15527.00 ms |
+| 19.0 | 4326 -> GCJ02 | 77.55 ms | 5502.51 ms |
+| 19.0 | 4326 -> BD09 -> 3857 | 244.36 ms | 15142.71 ms |
 
 Jenks: 100,000 rows, 1,000 distinct values, 7 classes, work_mem=8MB:
 
 | PostgreSQL | Rust array | Rust aggregate | CartoDB SQL |
 | --- | ---: | ---: | ---: |
 | 18.7 | 10.49 ms | 9.11 ms | 84.07 ms |
-| 19.0 | 10.09 ms | 9.07 ms | 85.62 ms |
+| 19.0 | 9.52 ms | 8.03 ms | 88.87 ms |
 
-The [pgrx upgrade report](doc/benchmarks/2026-11-13-pgrx-0.20.0.md) and
-[PG19 GA report](doc/benchmarks/2026-11-22-pg19-ga.md) describe the methodology,
-timing ranges and SQL/native differences. Results depend on the workload and
-host; the historical RC2 and current GA runs are not a controlled comparison.
+The [pgrx 0.20.1 report](doc/benchmarks/2026-11-24-pgrx-0.20.1.md),
+[PG19 GA report](doc/benchmarks/2026-11-22-pg19-ga.md), and
+[pgrx 0.20.0 report](doc/benchmarks/2026-11-13-pgrx-0.20.0.md) describe the
+methodology, timing ranges, controlled paired comparisons, and SQL/native
+differences. Results depend on the workload and host.
 
 Reproduce in a disposable database (the scripts recreate benchmark tables):
 
@@ -178,15 +180,15 @@ PGDATABASE=bench ROWS=100000 DISTINCT_VALUES=1000 BREAKS=7 WORK_MEM=8MB \
 ## Development
 
 See the [specification and audit decisions](doc/spec.md) and
-[0.0.9 benchmark comparison](doc/benchmarks/2026-11-22-spec-audit.md).
+[pgrx 0.20.1 benchmark report](doc/benchmarks/2026-11-24-pgrx-0.20.1.md).
 
-Use Rust **1.99.1**, cargo-pgrx **0.20.0**, matching Clang/libclang/LLVM majors,
+Use Rust **1.99.1**, cargo-pgrx **0.20.1**, matching Clang/libclang/LLVM majors,
 PostgreSQL server headers, PostGIS, and ICU/GEOS/librttopo development libraries.
 See the [benchmark Dockerfile](docker/Dockerfile.benchmark-trixie) for Debian dependencies.
 
 ```bash
 rustup toolchain install 1.99.1 --profile minimal
-cargo install --locked cargo-pgrx --version 0.20.0
+cargo install --locked cargo-pgrx --version 0.20.1
 cargo pgrx init --pg19=/usr/lib/postgresql/19/bin/pg_config
 cargo test --locked --lib
 cargo pgrx package --release --no-default-features --features pg19 \

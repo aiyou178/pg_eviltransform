@@ -31,6 +31,35 @@ BEGIN
   END IF;
 END $$;
 
+-- Parallel workers must resolve PostGIS read-only without assigning transaction IDs.
+DO $$
+DECLARE
+  c1 bigint;
+  c2 bigint;
+  c3 bigint;
+  c4 bigint;
+BEGIN
+  IF current_setting('server_version_num')::int >= 160000 THEN
+    PERFORM set_config('debug_parallel_query', 'on', true);
+  ELSE
+    PERFORM set_config('force_parallel_mode', 'on', true);
+  END IF;
+  WITH pts AS (
+    SELECT gis.st_setsrid(gis.st_makepoint(120 + g * 0.001, 30 + g * 0.001), 4326) AS g
+    FROM pg_catalog.generate_series(1, 50) AS g
+  )
+  SELECT
+    count(*) FILTER (WHERE gis.st_srid(evil.st_eviltransform(g, 990001)) = 990001),
+    count(*) FILTER (WHERE gis.st_srid(evil.st_eviltransform(g, 'BD09')) = 990002),
+    count(*) FILTER (WHERE gis.st_srid(evil.st_eviltransform(g, 'EPSG:4326', 990001)) = 990001),
+    count(*) FILTER (WHERE gis.st_srid(evil.st_eviltransform(g, 'EPSG:4326', 'BD09')) = 990002)
+  INTO c1, c2, c3, c4
+  FROM pts;
+  IF c1 <> 50 OR c2 <> 50 OR c3 <> 50 OR c4 <> 50 THEN
+    RAISE EXCEPTION 'parallel worker transform count mismatch: %, %, %, %', c1, c2, c3, c4;
+  END IF;
+END $$;
+
 -- Box2D/envelope functions may recompute bounds; &&/&&& read the serialized cache.
 DO $$
 DECLARE
@@ -45,9 +74,23 @@ BEGIN
 END $$;
 
 -- Namespace changes invalidate cached schema names without changing type OIDs.
+-- PostGIS SQL-language text overloads embed the installation schema in their own
+-- bodies, so test them before rename and after recreating PostGIS, while testing
+-- prepared call-site invalidation across ALTER SCHEMA on C-backed overloads.
+SELECT gis.st_x(evil.st_eviltransform('SRID=4326;POINT(120 30)'::gis.geometry, '+proj=longlat +datum=WGS84 +no_defs'));
+PREPARE evil_int_proj(gis.geometry) AS
+  SELECT evil.st_eviltransform($1, 3857);
+PREPARE evil_custom_proj(gis.geometry) AS
+  SELECT evil.st_eviltransform($1, 'BD09');
+EXECUTE evil_int_proj('SRID=4326;POINT(120 30)'::gis.geometry);
+EXECUTE evil_custom_proj('SRID=4326;POINT(120 30)'::gis.geometry);
 ALTER SCHEMA gis RENAME TO gis_renamed;
 SELECT evil.st_eviltransform('SRID=4326;POINT(120 30)'::gis_renamed.geometry, 3857);
 SELECT evil.st_eviltransform('SRID=4326;POINT(120 30)'::gis_renamed.geometry, 'BD09');
+EXECUTE evil_int_proj('SRID=4326;POINT(120 30)'::gis_renamed.geometry);
+EXECUTE evil_custom_proj('SRID=4326;POINT(120 30)'::gis_renamed.geometry);
+DEALLOCATE evil_int_proj;
+DEALLOCATE evil_custom_proj;
 
 -- Recreating PostGIS changes its type/function OIDs in this same backend.
 DROP EXTENSION pg_eviltransform;
@@ -65,6 +108,11 @@ BEGIN
   IF rebuilt_gis.st_srid(output) <> 3857
      OR abs(rebuilt_gis.st_x(output) - 13358338.895192828) > 1e-6 THEN
     RAISE EXCEPTION 'stale PostGIS function/type OID after recreation';
+  END IF;
+  output := evil.st_eviltransform('SRID=4326;POINT(120 30)'::rebuilt_gis.geometry, '+proj=longlat +datum=WGS84 +no_defs');
+  IF rebuilt_gis.st_srid(output) <> 0
+     OR rebuilt_gis.st_x(output) <> 120 OR rebuilt_gis.st_y(output) <> 30 THEN
+    RAISE EXCEPTION 'stale PostGIS text function OID after recreation';
   END IF;
 END $$;
 
