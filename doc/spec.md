@@ -2,7 +2,7 @@
 
 ## 1. Purpose & Runtime Matrix
 
-`pg_eviltransform` is a PostgreSQL and PostGIS extension built with Rust (`pgrx =0.20.0`, Rust `1.99.1`) and C (`librttopo` compiled with `-O3`). It provides:
+`pg_eviltransform` is a PostgreSQL and PostGIS extension built with Rust (`pgrx =0.20.1`, Rust `1.99.1`) and C (`librttopo` compiled with `-O3`). It provides:
 
 1. **`ST_EvilTransform`**: In-database coordinate transformations between `WGS84` (`4326`), `CGCS2000` (`4490`), `GCJ-02` (`990001`), `BD-09` (`990002`), and any SRID or PROJ string supported by PostGIS `ST_Transform`.
 2. **`ST_JenksBins`**: Exact Fisher-Jenks natural breaks classification (following PostGIS PR #6217 / `ST_JenksBins` semantics) as both array functions and streaming aggregates.
@@ -77,9 +77,9 @@ Given input geometry with `src_srid = ST_SRID(geom)` and target `dst_srid`:
 
 ### 3.3 Geometry & Mathematical Semantics
 
-- **Dimensionality & Flags**: Transforms X/Y while keeping Z/M unchanged. Drops stale cached bounding boxes and recomputes them with `rtgeom_drop_bbox` / `rtgeom_add_bbox` before serialization, preserving the `GSERIALIZED` geodetic flag. Empty geometries retain their shape with the target SRID.
+- **Dimensionality & Flags**: Transforms X/Y while keeping Z/M unchanged. Non-bbox Cartesian `POINT` geometries (including 2D/Z/M/ZM/EMPTY, matched by strict flag allowlist `Z | M | VER_0`) mutate their owned detoast buffer in place without `librttopo` deserialization or `malloc`/`free`. Boxed, geodetic, or non-point geometries use `librttopo`, drop stale cached bounding boxes and recompute them with `rtgeom_drop_bbox` / `rtgeom_add_bbox` before serialization, preserving the `GSERIALIZED` geodetic flag. PostGIS v2 `G2FLAG_EXTENDED` (`0x80`) headers return an explicit error rather than being misparsed by `librttopo`. Empty geometries retain their shape with the target SRID.
 - **China Bounding Box Check (`out_of_china`)**:
-  - `lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271`
+  - `!(lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271)` (treats `NaN` ordinates as outside China so a `NaN` in one axis does not corrupt a finite partner coordinate)
   - Outside this bounding box, all four elementary native Rust/C steps (`WGS84 <-> GCJ-02` and `GCJ-02 <-> BD-09`) leave `(lng, lat)` unchanged. Chained steps each apply their own guard; output SRID still changes.
   - The standalone regex SQL reference differs: its GCJ-02 / BD-09 polar offset is unconditional. It is a historical baseline, not a bit-identical oracle for native results.
 - **Ellipsoid & Constants**:
@@ -110,15 +110,18 @@ Given input geometry with `src_srid = ST_SRID(geom)` and target `dst_srid`:
   - Non-`NULL` elements are converted to `f64`. `AnyNumeric` uses pgrx's native PostgreSQL `numeric_float8` conversion, not a string round-trip.
 - **Validation**:
   - `breaks < 1` raises `ERROR: breaks must be greater than or equal to 1` for evaluated calls (STRICT functions skip NULL arguments).
+  - Aggregate calls with `NULL` `breaks` or `NULL` `invert` raise `ERROR: breaks must not be NULL` or `ERROR: ST_JenksBins invert argument must not be NULL`.
   - `NaN` or infinity raises `ERROR: Jenks input must be finite f64, got ...`; numeric overflow raises a conversion error.
   - Aggregate calls where `breaks` or `invert` vary across rows in the same group raise `ERROR: ST_JenksBins aggregate breaks and invert arguments must be constant`.
 - **Output Contract**:
   - Let $m$ be the count of distinct finite values (after normalizing `-0.0` to `+0.0`) and $k = \text{breaks}$.
   - If $m \le k$, returns all $m$ sorted distinct values.
+  - If $k = 1$, returns the global maximum (or minimum when `invert = true`) in $O(1)$.
   - If $m > k$, partitions the sorted distinct values into $k$ contiguous non-empty classes minimizing total within-class sum of squared deviations (SSD):
     - When `invert = false` (default): returns the **maximum** value of each class (length $k$, ending with the global maximum).
     - When `invert = true`: returns the **minimum** value of each class (length $k$, starting with the global minimum).
-  - Unweighted inputs (all frequencies equal 1) use `natural_breaks::classify_indices`; weighted inputs use divide-and-conquer Monge dynamic programming in $O(k \cdot m \log m)$ time.
+  - Distinct sorted values are shifted and scaled into `[0, 1]` (or half-scaled when `max - min` overflows `f64`) before prefix-sum variance computation so shifted or extreme-magnitude inputs do not suffer catastrophic cancellation, overflow, or underflow.
+  - Divide-and-conquer Monge dynamic programming ($O(k \cdot m \log m)$ time, `u32` split matrix) handles both weighted and unweighted inputs up to 64M split-table entries; larger unweighted inputs fall back to low-memory `natural_breaks::classify_indices`.
 
 ---
 
@@ -137,6 +140,11 @@ the source and the v0.0.9 changes. Released migration files are unchanged.
 | 5.5: regex does not accept signs, integers or exponents | Stale: the existing token regex already accepts these. A separate real defect was found and fixed: preserve Z/M in both POINT and multi-point WKT rewriting. |
 | Additional: borrowed input mutation | Fixed. librttopo's writable iterator aliases serialized coordinate storage. Custom transforms now obtain an owned writable copy when detoasting returned a borrowed datum; repeated use of an in-memory geometry must not compound offsets. |
 | Additional: stale cached geometry bounds | Fixed. On published 0.0.8, a transformed boxed LINESTRING can fail both geometry && its_own_endpoint and the ND &&& equivalent. Envelope/Box2D checks alone missed this because they can recompute bounds. Refresh deserialized boxes before serialization; regression checks exercise the actual cached-box predicates. |
+| Additional: parallel-worker XID error during PostGIS lookup | Fixed. `pgrx 0.20`'s `Spi::get_one` executes in read-write mode and failed inside parallel workers (`cannot assign transaction IDs during a parallel operation`). PostGIS schema resolution now reads `pg_extension` directly via read-only `table_open`/`systable_beginscan` with `AccessShareLock`, uniform across PG15-19. |
+| Additional: Jenks cancellation / overflow / underflow | Fixed. `ValueScaler` shifts and scales values into `[0, 1]` (with half-scaling when `max - min` overflows `f64`) before prefix-sum variance computation on both DP and low-memory paths. |
+| Additional: PostGIS v2 `G2FLAG_EXTENDED` (`0x80`) misparse | Fixed. `pgct_transform_gserialized` rejects extended-header geometries cleanly (`rc = 7`) instead of passing them to v1-only `librttopo`. |
+| Additional: `NaN` ordinate check in `out_of_china` | Fixed. Negated inclusive bounds keep `NaN` ordinates outside the China box so a `NaN` in one ordinate cannot corrupt a finite partner ordinate. |
+| Additional: Jenks aggregate NULL `breaks`/`invert` panic | Fixed. Aggregate `Args` accept `Option<i32>` / `Option<bool>` and raise clean PostgreSQL errors on SQL `NULL`. |
 
 ### Upgrade
 
@@ -158,16 +166,16 @@ not repair old serialized bounding boxes or index entries.
 
 | Original opportunity | Decision |
 | --- | --- |
-| 6.1: repeated detoasting | Implemented: integer routing retains one detoasted input through SRID inspection and custom transformation, freeing only owned copies. Borrowed uncompressed input is copied before mutation; already-owned detoast buffers are reused without decompression again. Identity results remain valid after cleanup. |
-| 6.2: PostgreSQL allocators / direct GSERIALIZED mutation | Deferred. Keep librttopo's format-aware deserialization and malloc ownership, with a Rust RAII guard for its output buffer. Replacing allocators introduces PostgreSQL ERROR/unwind concerns; hand-editing storage risks version, box, curve and collection compatibility. Correct cached-box recomputation takes precedence over skipping that work for speed. |
-| 6.2: generic point iterator overhead | Profiled and optimized: simple Cartesian POINT/LINESTRING use librttopo's indexed point-array APIs without iterator stacks. Curves, collections and geodetic storage retain the generic iterator. Ownership guards and bounding-box refresh are unchanged. |
-| 6.3: cache initialized FmgrInfo | Deferred pending workload-specific evidence and an explicit invalidation-safe memory-context design. OID caching is corrected; per-call fmgr initialization remains. A cached SQL PostGIS function also owns fn_extra state, so this is not just copying a function pointer. |
-| 6.4: two-stage intermediate geometries | Implemented: release owned intermediate varlenas after the final stage, with input/output alias checks. |
+| 6.1: repeated detoasting | Implemented: both integer and text routing detoast at most once, freeing only owned copies. Text overloads forward incoming `fcinfo->args` `text` datums directly to PostGIS without per-row allocations, and alias matching uses zero-alloc ASCII case-insensitive checks. |
+| 6.2: PostgreSQL allocators / direct GSERIALIZED mutation | Implemented for non-bbox Cartesian `POINT` (strict `Z \| M \| VER_0` allowlist mutating an owned detoast buffer in place with zero `librttopo`/`malloc` calls). All boxed, geodetic, and non-point geometries retain `librttopo` deserialization, `malloc` ownership with Rust RAII guard, and cached-box refresh. |
+| 6.2: generic point iterator overhead | Implemented across Cartesian `POINT`, `LINESTRING`, `TRIANGLE`, `CIRCSTRING`, `POLYGON`, `CURVEPOLY`, and Cartesian collections (`MULTI*`, `GEOMETRYCOLLECTION`, `COMPOUND`, `POLYHEDRALSURFACE`, `TIN`) using alignment-safe `memcpy` `RTPOINTARRAY` traversal after pre-mutation depth/type verification. Geodetic storage and deeply nested or unrecognized types retain `rtpointiterator_create_rw`. |
+| 6.3: cache initialized FmgrInfo | Implemented via per-call-site `CallSiteCache` in `fcinfo->flinfo->fn_extra` (allocated in `fn_mcxt`, keyed on `(MyDatabaseId, CATALOG_GENERATION)`, zeroed on syscache invalidation) and a compile-time `offset_of!`-verified stack `LocalFcinfo3`. Eliminates per-row `fmgr_info`/`palloc0`/`pfree` and lets PostGIS retain `PROJSRSCache` across rows. |
+| 6.4: two-stage intermediate geometries | Implemented: `OwnedDatum` / `DetoastedGeometry` release owned intermediate varlenas after the final stage, with input/output alias checks. |
 | 6.5: hypot, sincos and constant rearrangements | Deferred: no demonstrated end-to-end gain warrants changing rounding or portable libm behavior. Constant expressions are compiler-foldable; claimed 3-5x speedups are unverified. |
-| 6.6: eager array Vec | Implemented: all six element types and both array overloads consume pgrx Array iterators without a full intermediate Vec<Option<T>>. |
-| 6.6: numeric string round-trip | Already optimized in v0.0.8: f64::try_from(AnyNumeric) calls numeric_float8 in pgrx 0.20.0. |
-| 6.6: Jenks DP allocations | Implemented: one flat checked-size split matrix and direct edge indexing, removing the final distinct-value copy. |
-| 6.6: alternate hashing / sorting | Deferred pending distinct-count and memory measurements. Preserve duplicate-heavy streaming behavior and standard randomized hashing rather than adding a dependency or a second algorithm. |
+| 6.6: eager array Vec | Implemented: scalar arrays (`f64`, `f32`, `i64`, `i32`, `i16`) use zero-copy `Array::as_slice()` when null-free and fall back to pgrx `Array` iterators when nulls are present; `numeric[]` streams through pgrx iterators without a full intermediate `Vec<Option<T>>`. |
+| 6.6: numeric string round-trip | Already optimized in v0.0.8: `f64::try_from(AnyNumeric)` calls `numeric_float8` in `pgrx 0.20.x`. |
+| 6.6: Jenks DP allocations | Implemented: contiguous `Prefix` array, flat `u32` split matrix, direct edge indexing, O(1) `k = 1`, and avoiding low-memory `natural-breaks` unless unique split entries exceed 64M. |
+| 6.6: alternate hashing / sorting | Implemented with an in-crate per-instance randomly seeded SplitMix64 `u64` hasher (`SeededU64BuildHasher`) requiring no external crate while preserving duplicate-heavy streaming semantics and collision resistance. |
 | 6.6: parallel aggregation | Deferred as a separate feature. Requires combine/serialization contracts, cross-worker argument validation and error/lifecycle tests, not merely PARALLEL SAFE. Existing aggregate signatures are unchanged. |
 
 Builds retain generic CPU targets, Rust opt-level=3/fat LTO and C -O3. No
@@ -176,19 +184,22 @@ native-CPU, fast-math, unsafe-postgres or installation-privilege changes are mad
 ## 7. Regression Coverage
 
 - pgrx tests: POINT/LINESTRING in 2D/Z/M/ZM, collection fallback, transformed
-  bounding-box containment, Z/M preservation, explicit
-  source override, empty geometries, toasted inputs and identity result lifetime;
-  array tests cover all element types, NULL/empty input and inverted edges.
+  bounding-box containment, Z/M preservation, explicit source override, empty
+  geometries, toasted inputs, identity result lifetime, parallel-worker execution
+  across all four overloads, polygons/collections/curves/boxed points, Jenks
+  numerical stability, non-null scalar arrays, and aggregate NULL argument errors.
 - `tests/catalog_lifecycle.sql`: separate extension schemas, restricted caller
-  search_path, serialized 2D/ND box predicates, schema rename, same-backend
-  PostGIS recreation, and regex Z/M.
+  search_path, parallel workers under restricted `search_path`, serialized 2D/ND
+  box predicates, prepared call-site cache invalidation across schema rename,
+  same-backend PostGIS recreation (including text overloads), and regex Z/M.
   Run it in a disposable database; CI runs it on PostgreSQL 15-19 / amd64-arm64.
 - Existing core tests retain coordinate reference cases and known Jenks clusters.
-  Weighted tests now also exercise lower edges, one class and multiple splits.
+  Core tests also cover `NaN` ordinate guards and shifted/extreme-range Jenks stability.
 
 Raw benchmark output and machine-specific intermediate files remain local.
-The [final benchmark report](benchmarks/2026-11-22-spec-audit.md) records the
-initial correctness-related costs and subsequent profile-guided improvements.
+The [2026-11-22 spec-audit report](benchmarks/2026-11-22-spec-audit.md) and
+[2026-11-24 `pgrx 0.20.1` report](benchmarks/2026-11-24-pgrx-0.20.1.md) record
+the measured progression across these changes.
 
 Initial verification on 2026-11-22 passed on Linux ARM64: 32 tests per PostgreSQL
 major (15.20, 16.16, 17.12, 18.7, 19.0), the full catalog/cached-box fixture on
@@ -204,3 +215,14 @@ fixture on each of the five PostgreSQL versions. An additional 358-case matrix
 preserved EWKB results, input ownership and applicable cached-box predicates.
 Two independent 20-pair benchmark batches showed 6.6-7.4% lower composed-query
 medians and 11.8-12.3% lower toasted-line medians versus the correct baseline.
+
+Verification on 2026-11-24 with `pgrx 0.20.1` passed on Linux ARM64: 15 core Rust
+tests, 39 release `pgrx` tests and `tests/catalog_lifecycle.sql` on PG19.0 GA,
+real published `0.0.8 -> 0.0.9` DEB upgrade preserving OIDs and views, and all
+five PG15-19 ARM64 DEB builds. Paired PG19.0 GA benchmarks against `pgrx 0.20.0`
+(`67ca2f2`) matched EWKB and Jenks outputs byte-for-byte while reducing medians by
+25.0% on direct points, 22.4% on composed `4326 -> BD09 -> 3857`, 19.1% on
+standard `4326 -> 3857` delegation, 9.2% on toasted lines, 12.8% on polygons,
+14.8% on duplicate-heavy Jenks arrays, 8.2% on Jenks aggregates, and 59.1% on
+10k unique Jenks arrays. Consult the PR checks for the full PG15-19 amd64/arm64
+CI matrix result.

@@ -16,7 +16,7 @@ pub enum TransformKind {
 
 #[inline(always)]
 fn out_of_china(lat: f64, lng: f64) -> bool {
-    lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271
+    !(lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271)
 }
 
 #[inline(always)]
@@ -153,5 +153,16 @@ mod tests {
         let (lat, lng) = wgs2gcj(30.0, -120.0);
         assert_eq!(lat, 30.0);
         assert_eq!(lng, -120.0);
+    }
+
+    #[test]
+    fn test_nan_ordinates_do_not_corrupt_finite_partner() {
+        let (lat, lng) = wgs2gcj(30.0, f64::NAN);
+        assert_eq!(lat, 30.0);
+        assert!(lng.is_nan());
+
+        let (lat, lng) = gcj2bd(f64::NAN, 120.0);
+        assert!(lat.is_nan());
+        assert_eq!(lng, 120.0);
     }
 }

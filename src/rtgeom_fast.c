@@ -18,6 +18,11 @@
 #define MODE_GCJ2BD 5
 #define MODE_BD2GCJ 6
 
+#define PGCT_G2FLAG_Z 0x01u
+#define PGCT_G2FLAG_M 0x02u
+#define PGCT_G2FLAG_VER_0 0x40u
+#define PGCT_G2FLAG_EXTENDED 0x80u
+
 static void pgct_noop_reporter(const char* fmt, va_list ap, void* arg) {
   (void)fmt;
   (void)ap;
@@ -37,7 +42,7 @@ static RTCTX* pgct_ctx(void) {
 }
 
 static int out_of_china(double lat, double lng) {
-  return lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271;
+  return !(lng >= 72.004 && lng <= 137.8347 && lat >= 0.8293 && lat <= 55.8271);
 }
 
 static void transform(double x, double y, double* lat, double* lng) {
@@ -176,38 +181,211 @@ int pgct_gserialized_get_srid(const uint8_t* input, int32_t* out_srid) {
   return 0;
 }
 
-static int transform_pointarray(const RTCTX* ctx, RTPOINTARRAY* points, int mode) {
-  for (int i = 0; i < points->npoints; i++) {
-    RTPOINT4D point;
+/* Check whether a detoasted 4-byte-header GSERIALIZED is a Cartesian POINT
+ * without bbox, geodetic, solid, or v2 extended flags. In both PostGIS v1 and
+ * v2 GSERIALIZED layouts, bytes 8..16 are gtype/npoints and coordinates begin
+ * at byte 16. */
+int pgct_can_transform_point_in_place(const uint8_t* input, size_t len) {
+  uint8_t flags;
+  uint32_t gtype;
+  uint32_t npoints;
+  size_t ndims;
+
+  if (input == NULL || len < 16) {
+    return 0;
+  }
+
+  flags = input[7];
+  /* Allow only Z, M, and the GSERIALIZED v2 version bit; reject bbox, geodetic,
+   * solid, extended-flags, or any unknown flag bits. */
+  if ((flags & ~(PGCT_G2FLAG_Z | PGCT_G2FLAG_M | PGCT_G2FLAG_VER_0)) != 0) {
+    return 0;
+  }
+
+  memcpy(&gtype, input + 8, sizeof(uint32_t));
+  if (gtype != RTPOINTTYPE) {
+    return 0;
+  }
+
+  memcpy(&npoints, input + 12, sizeof(uint32_t));
+  if (npoints == 0) {
+    return len == 16;
+  }
+  if (npoints != 1) {
+    return 0;
+  }
+
+  ndims = 2u + (size_t)(flags & 0x01u) + (size_t)((flags >> 1) & 0x01u);
+  return len == 16u + ndims * sizeof(double);
+}
+
+int pgct_transform_point_in_place(uint8_t* buf,
+                                  size_t len,
+                                  int mode,
+                                  int32_t dst_srid) {
+  RTCTX* ctx = pgct_ctx();
+  uint32_t npoints;
+
+  if (ctx == NULL || !pgct_can_transform_point_in_place(buf, len)) {
+    return 1;
+  }
+
+  memcpy(&npoints, buf + 12, sizeof(uint32_t));
+  if (npoints == 1) {
+    double x;
+    double y;
     double out_lat;
     double out_lng;
-    if (rt_getPoint4d_p(ctx, points, i, &point) != RT_SUCCESS) {
-      return 4;
-    }
-    apply_mode(mode, point.y, point.x, &out_lat, &out_lng);
-    point.x = out_lng;
-    point.y = out_lat;
-    ptarray_set_point4d(ctx, points, i, &point);
+    memcpy(&x, buf + 16, sizeof(double));
+    memcpy(&y, buf + 24, sizeof(double));
+    apply_mode(mode, y, x, &out_lat, &out_lng);
+    memcpy(buf + 16, &out_lng, sizeof(double));
+    memcpy(buf + 24, &out_lat, sizeof(double));
+  }
+
+  gserialized_set_srid(ctx, (GSERIALIZED*)buf, dst_srid);
+  return 0;
+}
+
+static int transform_pointarray(const RTCTX* ctx, RTPOINTARRAY* points, int mode) {
+  size_t stride;
+  uint8_t* cursor;
+  (void)ctx;
+
+  if (points == NULL || points->npoints <= 0) {
+    return 0;
+  }
+  if (points->serialized_pointlist == NULL) {
+    return 4;
+  }
+
+  stride = (size_t)RTFLAGS_NDIMS(points->flags) * sizeof(double);
+  cursor = points->serialized_pointlist;
+  for (int i = 0; i < points->npoints; i++, cursor += stride) {
+    double x;
+    double y;
+    double out_lat;
+    double out_lng;
+    memcpy(&x, cursor, sizeof(double));
+    memcpy(&y, cursor + sizeof(double), sizeof(double));
+    apply_mode(mode, y, x, &out_lat, &out_lng);
+    memcpy(cursor, &out_lng, sizeof(double));
+    memcpy(cursor + sizeof(double), &out_lat, sizeof(double));
   }
   return 0;
 }
 
-static int transform_coordinates(const RTCTX* ctx, RTGEOM* geom, int mode) {
-  RTPOINTARRAY* points = NULL;
-  RTPOINTITERATOR* iter = NULL;
-
-  /* Simple Cartesian geometries need no iterator stack. Keep library point
-   * accessors for alignment and Z/M handling, and the generic path otherwise. */
-  if (!RTFLAGS_GET_GEODETIC(geom->flags)) {
-    if (geom->type == RTPOINTTYPE) {
-      points = ((RTPOINT*)geom)->point;
-    } else if (geom->type == RTLINETYPE) {
-      points = ((RTLINE*)geom)->points;
-    }
+static int can_traverse_cartesian(const RTGEOM* geom, int depth) {
+  if (geom == NULL) {
+    return 1;
+  }
+  if (depth > 64) {
+    return 0;
   }
 
-  if (points != NULL) {
-    return transform_pointarray(ctx, points, mode);
+  switch (geom->type) {
+    case RTPOINTTYPE:
+    case RTLINETYPE:
+    case RTTRIANGLETYPE:
+    case RTCIRCSTRINGTYPE:
+    case RTPOLYGONTYPE:
+      return 1;
+    case RTCURVEPOLYTYPE: {
+      const RTCURVEPOLY* cpoly = (const RTCURVEPOLY*)geom;
+      for (int i = 0; i < cpoly->nrings; i++) {
+        if (!can_traverse_cartesian(cpoly->rings[i], depth + 1)) {
+          return 0;
+        }
+      }
+      return 1;
+    }
+    case RTMULTIPOINTTYPE:
+    case RTMULTILINETYPE:
+    case RTMULTIPOLYGONTYPE:
+    case RTCOLLECTIONTYPE:
+    case RTCOMPOUNDTYPE:
+    case RTMULTICURVETYPE:
+    case RTMULTISURFACETYPE:
+    case RTPOLYHEDRALSURFACETYPE:
+    case RTTINTYPE: {
+      const RTCOLLECTION* col = (const RTCOLLECTION*)geom;
+      for (int i = 0; i < col->ngeoms; i++) {
+        if (!can_traverse_cartesian(col->geoms[i], depth + 1)) {
+          return 0;
+        }
+      }
+      return 1;
+    }
+    default:
+      return 0;
+  }
+}
+
+static int transform_cartesian_geom(const RTCTX* ctx, RTGEOM* geom, int mode) {
+  if (geom == NULL) {
+    return 0;
+  }
+
+  switch (geom->type) {
+    case RTPOINTTYPE:
+      return transform_pointarray(ctx, ((RTPOINT*)geom)->point, mode);
+    case RTLINETYPE:
+      return transform_pointarray(ctx, ((RTLINE*)geom)->points, mode);
+    case RTTRIANGLETYPE:
+      return transform_pointarray(ctx, ((RTTRIANGLE*)geom)->points, mode);
+    case RTCIRCSTRINGTYPE:
+      return transform_pointarray(ctx, ((RTCIRCSTRING*)geom)->points, mode);
+    case RTPOLYGONTYPE: {
+      RTPOLY* poly = (RTPOLY*)geom;
+      for (int i = 0; i < poly->nrings; i++) {
+        int rc = transform_pointarray(ctx, poly->rings[i], mode);
+        if (rc != 0) {
+          return rc;
+        }
+      }
+      return 0;
+    }
+    case RTCURVEPOLYTYPE: {
+      RTCURVEPOLY* cpoly = (RTCURVEPOLY*)geom;
+      for (int i = 0; i < cpoly->nrings; i++) {
+        int rc = transform_cartesian_geom(ctx, cpoly->rings[i], mode);
+        if (rc != 0) {
+          return rc;
+        }
+      }
+      return 0;
+    }
+    case RTMULTIPOINTTYPE:
+    case RTMULTILINETYPE:
+    case RTMULTIPOLYGONTYPE:
+    case RTCOLLECTIONTYPE:
+    case RTCOMPOUNDTYPE:
+    case RTMULTICURVETYPE:
+    case RTMULTISURFACETYPE:
+    case RTPOLYHEDRALSURFACETYPE:
+    case RTTINTYPE: {
+      RTCOLLECTION* col = (RTCOLLECTION*)geom;
+      for (int i = 0; i < col->ngeoms; i++) {
+        int rc = transform_cartesian_geom(ctx, col->geoms[i], mode);
+        if (rc != 0) {
+          return rc;
+        }
+      }
+      return 0;
+    }
+    default:
+      return 4;
+  }
+}
+
+static int transform_coordinates(const RTCTX* ctx, RTGEOM* geom, int mode) {
+  RTPOINTITERATOR* iter = NULL;
+
+  /* Traverse Cartesian geometries directly without iterator stack allocations
+   * or per-vertex shared-library calls; keep the generic iterator for geodetic
+   * storage, deeply nested collections, or unrecognized types. */
+  if (!RTFLAGS_GET_GEODETIC(geom->flags) && can_traverse_cartesian(geom, 0)) {
+    return transform_cartesian_geom(ctx, geom, mode);
   }
 
   iter = rtpointiterator_create_rw(ctx, geom);
@@ -251,6 +429,12 @@ int pgct_transform_gserialized(const uint8_t* input,
 
   if (ctx == NULL || input == NULL || out_ptr == NULL || out_len == NULL) {
     return 1;
+  }
+
+  /* librttopo only implements GSERIALIZED v1 and cannot parse PostGIS v2
+   * extended-flag headers safely. */
+  if ((input[7] & PGCT_G2FLAG_EXTENDED) != 0) {
+    return 7;
   }
 
   geom = rtgeom_from_gserialized(ctx, (const GSERIALIZED*)input);
